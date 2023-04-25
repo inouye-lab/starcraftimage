@@ -109,6 +109,14 @@ class StarCraftImage(torch.utils.data.Dataset):
             print('Loading metadata from csv. Note: to speed this up in the future, set `use_cache=True`')
             md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
         return md
+
+    def _clear_cache(self):
+        md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
+        if md_cache_path.exists():
+            md_cache_path.unlink()
+            print('Deleted cached metadata at ', str(md_cache_path))
+        else:
+            print('No cached metadata found at ', str(md_cache_path))
     
     def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
         if use_labels:
