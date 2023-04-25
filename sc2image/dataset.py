@@ -50,8 +50,8 @@ _DEFAULT_10_LABELS_DICT = {
 
 class StarCraftImage(torch.utils.data.Dataset):
     '''
-    Given a directory `root` and `subdir` create a StarCraft dataset
-    from metadata and npz files in that directory.
+    Given a directory `data_dir` create a StarCraft dataset
+    from metadata and replay png files in that directory.
 
     Params
     ------
@@ -76,7 +76,7 @@ class StarCraftImage(torch.utils.data.Dataset):
     '''
     def __init__(self, data_dir='starcraft-image-dataset', train=True, image_size=64, postprocess_metadata_fn=None, 
                  label_func=None, use_sparse=False, to_float=True, use_cache=False,
-                 drop_na=True, compute_labels=True):
+                 drop_na=True, use_labels=True):
         self.data_dir = data_dir
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         self.train = train
@@ -86,10 +86,15 @@ class StarCraftImage(torch.utils.data.Dataset):
         self.image_size = image_size
         if label_func is 'default' or label_func is None:
             label_func = _default_label_func
-            self.labels = _DEFAULT_10_LABELS_DICT
+            self.class_to_id = _DEFAULT_10_LABELS_DICT
         self.label_func = label_func
 
         # Load and preprocess metadata
+        self.metadata = self._process_metadata(self._load_metadata(use_cache),
+                                               use_labels, postprocess_metadata_fn, drop_na)
+        print('Finished dataset init')
+
+    def _load_metadata(self, use_cache):
         if use_cache:
             md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
             if md_cache_path.exists():
@@ -103,10 +108,11 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             print('Loading metadata from csv. Note: to speed this up in the future, set `use_cache=True`')
             md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'))
-
-        
-        if compute_labels:
-            if label_func != _default_label_func:
+        return md
+    
+    def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
+        if use_labels:
+            if self.label_func != _default_label_func:
                 print('Computing labels using custom label function...')
                 # Add target id (i.e. class labels) based on label func
                 md['target_id'] = md.apply(self.label_func, axis=1)
@@ -116,19 +122,14 @@ class StarCraftImage(torch.utils.data.Dataset):
                     postprocess_metadata_fn = _postprocess_train_test_split
                         # Filter metadata to get different windows
                 print('Post-processing metadata')
-                temp_match_md = md.drop_duplicates(subset=['replay_name'])
-                md = postprocess_metadata_fn(md, temp_match_md, train=self.train, labels=self.labels)
+                md = postprocess_metadata_fn(md, train=self.train)
                 md = md.reset_index(drop=True)  # Renumber rows
                 md['data_split'] = self.data_split
-
-                # Save metadata and match_metadata after post processing
-                self.metadata = md
 
             else:
                 print(f'Using default labels, and subsampling dataset to {self.data_split}...')
                 if self.data_split != 'all':
                     md = md[md['data_split'] == self.data_split].reset_index(drop=True)  # split md to train/test/all
-                self.metadata = md
 
             if drop_na:
                 # dropping any entries which do not have a label
@@ -140,8 +141,8 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             print('Not computing labels')
             md.drop(columns='target_id', inplace=True)
-
-        print('Finished dataset init')
+        
+        return md
 
     def __str__(self):
         item = self[0]
@@ -153,7 +154,6 @@ class StarCraftImage(torch.utils.data.Dataset):
         out += f'  num_windows = {len(self)}\n'
         out += f'  num_matches = {self.num_matches()}\n'
         out += f'  image_size = ({self.image_size}, {self.image_size})\n'
-        out += f'  num_labels = {len(self.labels)}\n'
         #out += f'  labels = {self.labels}\n'
         if type(item) is tuple:
             out += f'  getitem = {self[0]}\n'
@@ -398,18 +398,44 @@ class StarCraftImage(torch.utils.data.Dataset):
     
 
 class StarCraftHyper(StarCraftImage):
-    def __init__(self, root, **kwargs):
-        super().__init__(root, **kwargs)
+    def __init__(self, data_dir, **kwargs):
+        super().__init__(data_dir, **kwargs)
 
 
 class _StarCraftSimpleBase(StarCraftImage):
-    def __init__(self, root, transform=None, target_transform=None, **kwargs):
-        assert 'use_sparse' not in kwargs, 'use_sparse cannot be changed for StarCraftCIFAR10'
+    def __init__(self, data_dir, transform=None, target_transform=None, **kwargs):
+        assert 'use_sparse' not in kwargs, 'use_sparse cannot be changed for StarCraftSimple datasets'
         assert 'to_float' not in kwargs, 'for simple datasets, use transform = torchvision.transforms.ToTensor()'
-        super().__init__(root, use_sparse=False, **kwargs)
+        assert kwargs.get('use_labels', True)==True, 'for simple datasets use `use_labels` cannot be false'
+        super().__init__(data_dir, use_sparse=False, **kwargs)
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
+
+    def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
+        if use_labels:
+            if self.label_func != _default_label_func:
+                print('Computing labels using custom label function...')
+                # Add target id (i.e. class labels) based on label func
+                md['target_id'] = md.apply(self.label_func, axis=1)
+                
+            if drop_na:
+                md = md.dropna(subset=['target_id']).reset_index(drop=True)
+
+            print('Post-processing metadata')
+            assert postprocess_metadata_fn in [_postprocess_cifar10, _postprocess_mnist]
+            md = postprocess_metadata_fn(md, train=self.train)
+            md = md.reset_index(drop=True)  # Renumber rows
+            md['data_split'] = self.data_split
+
+            if drop_na:
+                md = md.dropna(subset=['target_id']).reset_index(drop=True)
+
+        else:
+            print('Not computing labels')
+            md.drop(columns='target_id', inplace=True)
+        return md
+        
 
     def __getitem__(self, idx):
         x, target = self._get_x_and_target(idx)
@@ -441,17 +467,17 @@ class _StarCraftSimpleBase(StarCraftImage):
 
 
 class StarCraftCIFAR10(_StarCraftSimpleBase):
-    def __init__(self, root, subdir='starcraft-image-dataset', **kwargs):
+    def __init__(self, data_dir, **kwargs):
         assert 'image_size' not in kwargs, 'Image size is fixed to 32 for StarCraftCIFAR10'
         assert 'postprocess_metadata_fn' not in kwargs, 'Postprocess function cannot be changed for StarCraftCIFAR10'
-        super().__init__(root, subdir=subdir, image_size=32, postprocess_metadata_fn=_postprocess_cifar10, **kwargs)
+        super().__init__(data_dir, image_size=32, postprocess_metadata_fn=_postprocess_cifar10, **kwargs)
 
 
 class StarCraftMNIST(_StarCraftSimpleBase):
-    def __init__(self, root, subdir='starcraft-image-dataset', label_func='default', **kwargs):
+    def __init__(self, data_dir, label_func='default', **kwargs):
         assert 'image_size' not in kwargs, 'Image size is fixed to 28 for StarCraftMNIST'
         assert 'postprocess_metadata_fn' not in kwargs, 'Postprocess function cannot be changed for StarCraftMNIST'
-        super().__init__(root, subdir=subdir, image_size=28, postprocess_metadata_fn=_postprocess_mnist, **kwargs)
+        super().__init__(data_dir, image_size=28, postprocess_metadata_fn=_postprocess_mnist, **kwargs)
 
     def _get_x_and_target(self, idx):
         x, target = super()._get_x_and_target(idx)
@@ -490,9 +516,9 @@ def _default_label_func(smd):
     return make_map_plus_begin_end_game_label(smd)
 
 
-def _postprocess_train_test_split(metadata, match_metadata, train, labels, perc_train=0.9, random_state=1):
+def _postprocess_train_test_split(metadata, train, perc_train=0.9, random_state=1):
     # First filter to only matches that are in the labels
-    metadata = pd.concat([filt_md for target_id, filt_md, filt_mmd in _stratify_by_label(metadata)])
+    metadata = pd.concat([filt_md for target_id, filt_md in _stratify_by_label(metadata)])
     match_metadata = metadata.drop_duplicates(subset=['replay_name']).reset_index(drop=True)
 
     # Split into train and test along unique matches
@@ -532,16 +558,15 @@ def _postprocess_mnist(*args, **kwargs):
         n_train=N_TRAIN_MNIST, n_test=N_TEST_MNIST)
 
 
-def _postprocess_simplified(metadata, match_metadata, train, labels, n_train, n_test):
+def _postprocess_simplified(metadata, train, n_train, n_test):
     '''Filter metadata via stratified sampling. 
     First stratify based on class. 
     Then split based on matches. 
     Finally, sample without replacement to get exact numbers.'''
     return pd.concat([
         _train_test_split_and_sample(
-            filt_md, filt_mmd, train, None, # labels is not used...
-            n_train=n_train, n_test=n_test, random_state=int(target_id))
-        for target_id, filt_md, filt_mmd in _stratify_by_label(metadata)
+            filt_md, train, n_train=n_train, n_test=n_test, random_state=np.abs(int(target_id)))
+                for target_id, filt_md, in _stratify_by_label(metadata)
     ]).sample(frac=1, random_state=0).reset_index(drop=True)  # Shuffle rows
 
 
@@ -552,18 +577,16 @@ def _stratify_by_label(md):
     for target_id in unique_ids:
         # Filter by target_id
         filt_md = md[md['target_id'] == target_id].reset_index(drop=True)
-        # Get match metadata (i.e., first unique occurences)
-        filt_mmd = filt_md.drop_duplicates(subset=['replay_name']).reset_index(drop=True)
         # Yield this group
-        yield target_id, filt_md, filt_mmd
+        yield target_id, filt_md
 
 
-def _train_test_split_and_sample(md, filt_mmd, train, labels, n_train, n_test, random_state=0):
+def _train_test_split_and_sample(md, train, n_train, n_test, random_state=0):
     '''Split into train and test based on match data. Then sample to exact n_train or n_test.'''
     # Split roughly into train and test by matches
     perc_train = n_train / (n_train + n_test)
     # NOTE: This returns train or test metadata already
-    md = _postprocess_train_test_split(md, filt_mmd, train, labels, perc_train=perc_train)
+    md = _postprocess_train_test_split(md, train, perc_train=perc_train)
 
     # Randomly sample exact number of windows
     perm = np.random.RandomState(random_state).permutation(len(md))
@@ -576,7 +599,6 @@ def _train_test_split_and_sample(md, filt_mmd, train, labels, n_train, n_test, r
         md = md.iloc[perm[:n_test], :]
     else:
         raise ValueError('`train` must be True, False or \'all\'')
-    # print(len(filt_mmd), len(md))
     return md.reset_index(drop=True)
 
 
@@ -590,7 +612,7 @@ def starcraft_dense_ragged_collate(batch):
     `sc_collate` is an alias for this function as well.
 
     Example:
-    >>> scdata = StarCraftImage(root, use_sparse=False)
+    >>> scdata = StarCraftImage(data_dir, use_sparse=False)
     >>> torch.utils.data.DataLoader(scdata, collate_fn=sc_collate, batch_size=32, shuffle=True)
     '''
     elem = batch[0]
