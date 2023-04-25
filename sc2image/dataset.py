@@ -103,11 +103,11 @@ class StarCraftImage(torch.utils.data.Dataset):
             else:
                 print('No cached metadata found at ', str(md_cache_path))
                 print('Loading metadata from csv and saving to cache')
-                md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'))
+                md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
                 md.to_pickle(md_cache_path)
         else:
             print('Loading metadata from csv. Note: to speed this up in the future, set `use_cache=True`')
-            md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'))
+            md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
         return md
     
     def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
@@ -208,13 +208,13 @@ class StarCraftImage(torch.utils.data.Dataset):
             **self._extract_terrain_info(idx, return_dict=True),
             # Extract target information
             is_player_1_winner = self._get_is_player_1_winner(idx),
-            target_id = md_row['target_id'],
+            target_id = torch.tensor(md_row['target_id']),
         )
 
     def _check_float(self, data_dict):
         def _try_float(k, v):
-            if k.endswith('unit_ids'):
-                return v.long()
+            if k.endswith('unit_ids') or k in ['target_id', 'is_player_1_winner']:
+                return v.to(torch.int64)
             try:
                 v = v.float()
             except AttributeError:
