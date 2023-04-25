@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 import torchvision.transforms.functional
 from torchvision import io
+from torchvision.datasets.utils import download_and_extract_archive
 import PIL
 
 from .modules import StarCraftToImageReducer
@@ -50,7 +51,7 @@ _DEFAULT_10_LABELS_DICT = {
 
 class StarCraftImage(torch.utils.data.Dataset):
     '''
-    Given a directory `data_dir` create a StarCraft dataset
+    Given a root data directory, create a StarCraft dataset (downloading if necessary)
     from metadata and replay png files in that directory.
 
     Params
@@ -74,10 +75,16 @@ class StarCraftImage(torch.utils.data.Dataset):
                    remain as LongTensor so they can be used with
                    embedding layers.
     '''
-    def __init__(self, data_dir='starcraft-image-dataset', train=True, image_size=64, postprocess_metadata_fn=None, 
+    _versions_dict = {  # Note, this only includes major and minor versions
+        '1.0': {'download_url': 'xxx'}
+    }
+    dataset_name = 'starcraft-image-dataset'
+
+    def __init__(self, root_dir='data', train=True, image_size=64, postprocess_metadata_fn=None, 
                  label_func=None, use_sparse=False, to_float=True, use_cache=False,
-                 drop_na=True, use_labels=True):
-        self.data_dir = data_dir
+                 drop_na=True, use_labels=True, download=True):
+        
+        self.data_dir = self._initialize_data_dir(root_dir, download)
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         self.train = train
         self.data_split = 'train' if train==True else 'test' if train==False else 'all'
@@ -152,11 +159,42 @@ class StarCraftImage(torch.utils.data.Dataset):
         
         return md
 
+    def _initialize_data_dir(self, root_dir, download_flag):
+        version_dict = self._versions_dict[ sorted(list(self.versions_dict.keys()))[-1] ]  # getting the latest version
+
+        root_dir = Path(root_dir)
+        root_dir.mkdir(exist_ok=True)
+        data_dir = root_dir / f'{self.dataset_name}_v{version_dict["version"]}'
+        # see if the dataset already exists
+        if data_dir.exists() and len(os.listdir(data_dir)) > 0:
+            print('Dataset found in ', str(data_dir))
+        else:
+            # the dataset does not exist, download it if download_flag is set to true
+            if not download_flag:
+                raise FileNotFoundError(
+                    f'The {self.dataset_name} dataset could not be found in {data_dir}. Initialize the dataset with '
+                    f'download=True to download the dataset.'
+                )
+            
+            print(f'Dataset not found in {data_dir}, downloading...')
+            data_dir.mkdir(exist_ok=True)
+            try:
+                download_and_extract_archive(
+                    url=version_dict['download_url'],
+                    download_root=data_dir,
+                    filename='starcraftimage.tar.gz',
+                    remove_finished=True)
+            except Exception as e:
+                print(f'Download failure.\n{os.path.join(data_dir, "starcraftimage.tar.gz")} may be corrupted.',
+                       'Please try deleting it and rerunning this command.\n')
+                print(f'Exception: ', e)
+        return data_dir
+
     def __str__(self):
         item = self[0]
         
         out = '-----------------\n'
-        out += f'{self.__class__.__name__}\n'
+        out += f'  {self.dataset_name}\n'
         out += f'  data_dir = {self.data_dir}\n'
         out += f'  data_split = {self.data_split}\n'
         out += f'  num_windows = {len(self)}\n'
