@@ -39,16 +39,19 @@ _DEFAULT_10_LABELS_DICT = {
 }
 
 
-################################ #TODO ################################
+################################ #TODO/#Questions ################################
 #######################################################################
 """
 * How are we going to handle samples which don't have a y label (e.g., the two maps which are not included in the default 10 classes)? 
   If drop them by default, this will by default drop all samples from 2/7 maps
 
+* How should the player bags be stacked?
+
+* Is it okay for the map state info to be ignored (unless the user specifies dict?)
+
+* How do we want to return everything if they do specify dict? Should we still combine all the player bags into one tensor?
+
 * Fill in docstrings for all functions
-
-
-
 """
 #######################################################################
 #######################################################################
@@ -83,6 +86,12 @@ class StarCraftImage(torch.utils.data.Dataset):
                    embedding layers.
     '''
 
+
+    _versions_dict = {  # Note, this only includes major and minor versions
+                '1.0': {'download_url': 'xxx'}
+            }
+    dataset_name = 'starcraft-image-dataset'
+    
     def __init__(self,
                     root_dir='data',
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
@@ -97,12 +106,10 @@ class StarCraftImage(torch.utils.data.Dataset):
                     ######### REMOVE BELOW #######
                     ):
         
-        self._versions_dict = {  # Note, this only includes major and minor versions
-            '1.0': {'download_url': 'xxx'}
-        }
-        self.dataset_name = 'starcraft-image-dataset'
-        
         self.data_dir = self._initialize_data_dir(root_dir, download)
+        assert image_format in ['dense-hyperspectral-image', 'dense-bag-of-units', 'sparse-hyperspectral-image'], \
+                    f'Invalid image_format: {image_format}'
+        self.image_format = image_format
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         self.train = train
         self.data_split = 'train' if train==True else 'test' if train==False else 'all'
@@ -212,22 +219,37 @@ class StarCraftImage(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # Get necessary metadata
         window_png_filepath = self._get_window_png_path(idx)
-        player_window_dict = self._convert_bag_png_to_player_dense_bag_window_dict(window_png_filepath)
+        player_window_dict = self._convert_bag_of_units_png_to_bag_of_units_dict(window_png_filepath)
 
-        if self.use_sparse:
-            # convert player_dense_bag_window_dict to sparse window dict
-            player_window_dict = self._convert_player_dense_bag_window_dict_to_player_sparse_window_dict(player_window_dict)
-        elif self.image_size != EXTRACTED_IMAGE_SIZE:
-            # resize the images in the player_window_dict
-            player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
+        if self.image_format in ['sparse-hyperspectral-image', 'dense-hyperspectral-image']:
+            # convert from the dense bag of units representation to a hyperspectral image representation
+            player_window_dict = self._convert_bag_of_units_dict_to_sparse_window_dict(player_window_dict)
+            window_image = torch.cat([player_window_dict[f'{player}_hyperspectral'] 
+                                        for player in ['player_1', 'player_2', 'neutral']], dim=0).coalesce()
+            if self.image_format == 'dense-hyperspectral-image':
+                window_image = window_image.to_dense()
+
+        else:
+            if self.image_size != EXTRACTED_IMAGE_SIZE:
+                # resize the images in the player_window_dict
+                player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
+            # convert from the dense bag of units representation to a dense bag of units image representation
+            window_image = self._convert_bag_of_units_dict_to_bag_of_unit_image(player_window_dict)
              
+        if self.return_dict:
+            data_dict = dict(
+                image=window_image,
+                player_1_map_state=player_window_dict['player_1_map_state'],
+                player_2_map_state=player_window_dict['player_2_map_state'],
+                **self._get_unit_tabular(idx),
+                **self._get_non_unit_items(idx)
+            ) 
+            return self._check_float(data_dict)
+        elif self.return_y:
 
-        data_dict = dict(
-            **player_window_dict,
-            **self._get_unit_tabular(idx),
-            **self._get_non_unit_items(idx)
-        ) 
-        return self._check_float(data_dict)
+            return window_image, self.metadata.iloc[idx]['target_id']
+        else:
+            return window_image
     
     def _get_unit_tabular(self, idx):
         def _get_player_tabular(md_row, player_id):
@@ -276,16 +298,16 @@ class StarCraftImage(torch.utils.data.Dataset):
         item = self.metadata.iloc[idx]
         return torch.tensor(item['winning_player_id'] == 1)
     
-    def _convert_bag_png_to_player_dense_bag_window_dict(self, png_file_path):
+    def _convert_bag_of_units_png_to_bag_of_units_dict(self, png_file_path):
         KEYS_OF_INTEREST = ['unit_values', 'unit_ids', 'map_state']
         player_prefix_to_channel_idx = {
             'player_2': 0,
             'neutral': 1,
             'player_1': 2}    
 
-        dense_bag = io.read_image(str(png_file_path)).squeeze()
-        # unstack the dense_bag back into channels
-        assert dense_bag.shape[1] % EXTRACTED_IMAGE_SIZE == 0, f'Dense bag from png {png_file_path} is not evenly divided by image size: {self.image_size}'
+        bag = io.read_image(str(png_file_path)).squeeze()
+        # unstack the bag back into channels
+        assert bag.shape[1] % EXTRACTED_IMAGE_SIZE == 0, f'Dense bag from png {png_file_path} is not evenly divided by image size: {self.image_size}'
         window_dict = {}
         for row_idx, key in enumerate(KEYS_OF_INTEREST):
             for player_prefix in ['player_1', 'player_2', 'neutral']:
@@ -294,21 +316,34 @@ class StarCraftImage(torch.utils.data.Dataset):
                 channel_idx = player_prefix_to_channel_idx[player_prefix]
                 stack = torch.stack(
                     [item for item in torch.split(
-                        dense_bag[channel_idx,
+                        bag[channel_idx,
                                   row_idx*EXTRACTED_IMAGE_SIZE:(row_idx+1)*EXTRACTED_IMAGE_SIZE], EXTRACTED_IMAGE_SIZE, dim=1)
                             if torch.any(item)], dim=0)
                 window_dict[f'{player_prefix}_{key}'] = stack
         return window_dict
     
-    def _convert_dense_player_bag_to_resized_player_hyperspectral(self, dense_bag_window_dict, player_prefix,
+    def _convert_bag_of_units_dict_to_bag_of_unit_image(self, player_window_dict):
+        window_image = []
+        max_bag_size = -1
+        for player_prefix in ['player_1', 'player_2', 'neutral']:
+            for key in ['unit_values', 'unit_ids']:
+                window_image.append(player_window_dict[f'{player_prefix}_{key}'])
+                max_bag_size = max(max_bag_size, window_image[-1].shape[0])
+        # pad the bag of units to the max bag size so we can then stack them
+        for i in range(len(window_image)):
+            window_image[i] = torch.cat(
+                [ window_image[i], torch.zeros(max_bag_size - window_image[i].shape[0], *window_image[i].shape[1:]) ])
+        return torch.stack(window_image, dim=0)
+
+    def _convert_dense_player_bag_to_resized_player_hyperspectral(self, bag_window_dict, player_prefix,
                                                                   return_sparse_tensor=True):
-        non_empty_mask = dense_bag_window_dict[f'{player_prefix}_unit_ids'] != NO_UNIT_CHANNEL
+        non_empty_mask = bag_window_dict[f'{player_prefix}_unit_ids'] != NO_UNIT_CHANNEL
         # getting indicies
         xy_idxs = non_empty_mask.nonzero()[:, 1:]  # getting the x,y spatial coordinates for the p1_uids
-        c_idxs = dense_bag_window_dict[f'{player_prefix}_unit_ids'][non_empty_mask]
+        c_idxs = bag_window_dict[f'{player_prefix}_unit_ids'][non_empty_mask]
         idxs = torch.hstack((c_idxs.unsqueeze(1), xy_idxs))
         # getting values
-        values = dense_bag_window_dict[f'{player_prefix}_unit_values'][non_empty_mask]
+        values = bag_window_dict[f'{player_prefix}_unit_values'][non_empty_mask]
 
         n_channels = len(nonneutral_ids) if player_prefix != 'neutral' else len(neutral_ids)
         idxs, values, shape = self._resize_hyper(idxs, values,
@@ -319,18 +354,18 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             return idxs, values, shape
 
-    def _convert_player_dense_bag_window_dict_to_player_sparse_window_dict(self, dense_bag_window_dict):
+    def _convert_bag_of_units_dict_to_sparse_window_dict(self, bag_window_dict):
         player_sparse_window_dict = {}
         # first calculate player hyperspectrals
         for player_prefix in ['player_1', 'player_2', 'neutral']:
             player_sparse_window_dict[f'{player_prefix}_hyperspectral'] = \
-                self._convert_dense_player_bag_to_resized_player_hyperspectral(dense_bag_window_dict, player_prefix)
+                self._convert_dense_player_bag_to_resized_player_hyperspectral(bag_window_dict, player_prefix)
             if player_prefix != 'neutral':
                 # the map state information is saved as a dense tensor, so just copy that over
-                player_sparse_window_dict[f'{player_prefix}_map_state'] = dense_bag_window_dict[f'{player_prefix}_map_state']
+                player_sparse_window_dict[f'{player_prefix}_map_state'] = bag_window_dict[f'{player_prefix}_map_state']
 
         return player_sparse_window_dict
-
+        
     def _resize_hyper(self, indices, values, shape):
         if self.image_size == EXTRACTED_IMAGE_SIZE:
             return indices, values, shape
@@ -361,7 +396,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         temp_sparse = torch.sparse_coo_tensor(unique_indices.T, unique_values, shape).coalesce()
         return temp_sparse.indices().T, temp_sparse.values(), shape
     
-    def _convert_player_hyper_idxs_values_to_dense_bag_uids_and_uvalues(self, indices, values, shape):
+    def _convert_player_hyper_idxs_values_to_bag_uids_and_uvalues(self, indices, values, shape):
             # Sort by xy coordinates so that np.split can be used later
             sort_idx = np.lexsort((indices[:, 2], indices[:, 1]))
             indices = indices[sort_idx, :]
@@ -410,7 +445,7 @@ class StarCraftImage(torch.utils.data.Dataset):
                                                                                                  return_sparse_tensor=False)
             # now we need to convert the idxs and values back into a dense tensor
             dense_player_window_dict[f'{player_prefix}_unit_ids'], dense_player_window_dict[f'{player_prefix}_unit_values'] = \
-                self._convert_player_hyper_idxs_values_to_dense_bag_uids_and_uvalues(idxs.numpy(), values.numpy(), shape)
+                self._convert_player_hyper_idxs_values_to_bag_uids_and_uvalues(idxs.numpy(), values.numpy(), shape)
         return dense_player_window_dict
 
     def _extract_terrain_info(self, idx, return_dict=True):
@@ -433,12 +468,12 @@ class StarCraftImage(torch.utils.data.Dataset):
     
 
 class StarCraftHyper(StarCraftImage):
-    def __init__(self, data_dir, **kwargs):
-        super().__init__(data_dir, **kwargs)
+    def __init__(self, root_dir, **kwargs):
+        super().__init__(root_dir, **kwargs)
 
 class _StarCraftSimpleBase(StarCraftImage):
     def __init__(self, 
-                    data_dir, 
+                    root_dir, 
                     train=True,
                     postprocess_metadata_fn=None,  # Function to apply to metadata after loading
                     transform=None,  # Transform applied to image
@@ -450,7 +485,7 @@ class _StarCraftSimpleBase(StarCraftImage):
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
-        super().__init__(data_dir, train=train, image_size=image_size, use_cache=use_cache)
+        super().__init__(root_dir, train=train, image_size=image_size, use_cache=use_cache)
         
     def _process_metadata(self, md, drop_na):            
         if drop_na:
@@ -493,14 +528,14 @@ class _StarCraftSimpleBase(StarCraftImage):
 
 
 class StarCraftCIFAR10(_StarCraftSimpleBase):
-    def __init__(self, data_dir, train=True, transform=None, target_transform=None, use_cache=False):
-        super().__init__(data_dir, train=True, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
+    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_cache=False):
+        super().__init__(root_dir, train=True, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
                          transform=transform, target_transform=target_transform, use_cache=False)
 
 
 class StarCraftMNIST(_StarCraftSimpleBase):
-    def __init__(self, data_dir, train=True, transform=None, target_transform=None, use_cache=False):
-        super().__init__(data_dir, train=True, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
+    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_cache=False):
+        super().__init__(root_dir, train=True, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
                          transform=transform, target_transform=target_transform, use_cache=False)
 
     def _get_x_and_target(self, idx):
@@ -533,7 +568,7 @@ def starcraft_dense_ragged_collate(batch):
     `sc_collate` is an alias for this function as well.
 
     Example:
-    >>> scdata = StarCraftImage(data_dir, use_sparse=False)
+    >>> scdata = StarCraftImage(root_dir, use_sparse=False)
     >>> torch.utils.data.DataLoader(scdata, collate_fn=sc_collate, batch_size=32, shuffle=True)
     '''
     elem = batch[0]
