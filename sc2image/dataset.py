@@ -13,9 +13,9 @@ import PIL
 
 from .modules import StarCraftToImageReducer
 from .utils.unit_type_data import NEUTRAL_IDS as neutral_ids, NONNEUTRAL_IDS as nonneutral_ids, NO_UNIT_CHANNEL
+from .utils.metadata_processing import _postprocess_cifar10, _postprocess_mnist
 
 EXTRACTED_IMAGE_SIZE = 64
-
 TABULAR_KEYS = ['minerals', 'vespene', 
                 'food_used', 'food_cap', 'food_army', 'food_workers', 
                 'idle_worker_count', 'army_count', 'warp_gate_count', 
@@ -24,16 +24,6 @@ TERRAIN_KEYS = ['pathing_grid', 'placement_grid', 'terrain_height']
 
 RACE_TO_ID = {'Terran':1, 'Zerg': 2, 'Protoss': 3}
 ID_TO_RACE = {v:k for k, v in RACE_TO_ID.items()}
-
-MAP_NAME_TO_ID = {'Acolyte LE': 0,
-                  'Abyssal Reef LE': 1,
-                  'Ascension to Aiur LE': 2,
-                  'Mech Depot LE': 3,
-                  'Odyssey LE': 4,
-                  'Interloper LE': 5,
-                  'Catallena LE (Void)': 6}
-# grab the first 5 maps
-SUBMAP_NAMES_TO_ID = {name: 2*mid if mid <= 4 else None for name, mid in MAP_NAME_TO_ID.items()}
 
 _DEFAULT_10_LABELS_DICT = {
     0: ('Acolyte LE', 'Beginning'),
@@ -47,6 +37,23 @@ _DEFAULT_10_LABELS_DICT = {
     8: ('Odyssey LE', 'Beginning'),
     9: ('Odyssey LE', 'End')
 }
+
+
+################################ #TODO ################################
+#######################################################################
+"""
+* How are we going to handle samples which don't have a y label (e.g., the two maps which are not included in the default 10 classes)? 
+  If drop them by default, this will by default drop all samples from 2/7 maps
+
+* Fill in docstrings for all functions
+
+
+
+"""
+#######################################################################
+#######################################################################
+
+
 
 
 class StarCraftImage(torch.utils.data.Dataset):
@@ -75,33 +82,42 @@ class StarCraftImage(torch.utils.data.Dataset):
                    remain as LongTensor so they can be used with
                    embedding layers.
     '''
-    _versions_dict = {  # Note, this only includes major and minor versions
-        '1.0': {'download_url': 'xxx'}
-    }
-    dataset_name = 'starcraft-image-dataset'
 
-    def __init__(self, root_dir='data', train=True, image_size=64, postprocess_metadata_fn=None, 
-                 label_func=None, use_sparse=False, to_float=True, use_cache=False,
-                 drop_na=True, use_labels=True, download=True):
+    def __init__(self,
+                    root_dir='data',
+                    train=True,  # can be True, False, or 'all', where 'all' yields both train and test
+                    image_size=64,
+                    image_format='dense-hyperspectral-image', # other formats are 'dense-bag-of-units' and 'sparse-hyperspectral-image'
+                    to_float=True, 
+                    drop_na=True,  # Drop samples which have no default y labels
+                    return_y=False,
+                    return_dict=False,
+                    use_cache=False,
+                    download=True,
+                    ######### REMOVE BELOW #######
+                    ):
+        
+        self._versions_dict = {  # Note, this only includes major and minor versions
+            '1.0': {'download_url': 'xxx'}
+        }
+        self.dataset_name = 'starcraft-image-dataset'
         
         self.data_dir = self._initialize_data_dir(root_dir, download)
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         self.train = train
         self.data_split = 'train' if train==True else 'test' if train==False else 'all'
-        self.use_sparse = use_sparse
         self.to_float = to_float
+        self.return_dict = return_dict
+        self.return_y = return_y
         self.image_size = image_size
-        if label_func is 'default' or label_func is None:
-            label_func = _default_label_func
-            self.class_to_id = _DEFAULT_10_LABELS_DICT
-        self.label_func = label_func
 
-        # Load and preprocess metadata
-        self.metadata = self._process_metadata(self._load_metadata(use_cache),
-                                               use_labels, postprocess_metadata_fn, drop_na)
-        print('Finished dataset init')
+        # Load and process metadata (e.g., splitting to train or test)
+        self.metadata = self._process_metadata(self._load_metadata(use_cache), drop_na)
 
     def _load_metadata(self, use_cache):
+        """
+        Load metadata from csv file, optionally using a cached version. 
+        """
         if use_cache:
             md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
             if md_cache_path.exists():
@@ -116,6 +132,16 @@ class StarCraftImage(torch.utils.data.Dataset):
             print('Loading metadata from csv. Note: to speed this up in the future, set `use_cache=True`')
             md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
         return md
+    
+    def _process_metadata(self, md, drop_na):
+        """
+        Filter metadata to train, test, or all (set by `train`), and drop samples with no y label (if `drop_na`)."""
+        # Filter metadata to train, test, or all
+        if self.data_split != 'all':
+            md = md[md['data_split'] == self.data_split].reset_index(drop=True)  # split md to train/test/all
+        if drop_na:
+            md = md.dropna(subset=['target_id']).reset_index(drop=True)
+        return md
 
     def _clear_cache(self):
         md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
@@ -124,47 +150,16 @@ class StarCraftImage(torch.utils.data.Dataset):
             print('Deleted cached metadata at ', str(md_cache_path))
         else:
             print('No cached metadata found at ', str(md_cache_path))
-    
-    def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
-        if use_labels:
-            if self.label_func != _default_label_func:
-                print('Computing labels using custom label function...')
-                # Add target id (i.e. class labels) based on label func
-                md['target_id'] = md.apply(self.label_func, axis=1)
-
-                print(f'Done. Now post-processing metadata to split to {self.data_split} and remove any entries without labels...')
-                if postprocess_metadata_fn is None:
-                    postprocess_metadata_fn = _postprocess_train_test_split
-                        # Filter metadata to get different windows
-                print('Post-processing metadata')
-                md = postprocess_metadata_fn(md, train=self.train)
-                md = md.reset_index(drop=True)  # Renumber rows
-                md['data_split'] = self.data_split
-
-            else:
-                print(f'Using default labels, and subsampling dataset to {self.data_split}...')
-                if self.data_split != 'all':
-                    md = md[md['data_split'] == self.data_split].reset_index(drop=True)  # split md to train/test/all
-
-            if drop_na:
-                # dropping any entries which do not have a label
-                # NOTE: any missing target ids should be set with pd.NA instead of None to avoid the target_id
-                # series being casted to float to account for the missing value. See below for details:
-                # https://pandas.pydata.org/docs/dev/user_guide/integer_na.html#nullable-integer-data-type
-                md = md.dropna(subset=['target_id']).reset_index(drop=True)
-
-        else:
-            print('Not computing labels')
-            md.drop(columns='target_id', inplace=True)
-        
-        return md
 
     def _initialize_data_dir(self, root_dir, download_flag):
-        version_dict = self._versions_dict[ sorted(list(self.versions_dict.keys()))[-1] ]  # getting the latest version
+        """
+        Initialize the data directory, downloading the dataset if necessary
+        """
+        latest_version = sorted(list(self._versions_dict.keys()))[-1]  # getting the latest version
 
         root_dir = Path(root_dir)
         root_dir.mkdir(exist_ok=True)
-        data_dir = root_dir / f'{self.dataset_name}_v{version_dict["version"]}'
+        data_dir = root_dir / f'{self.dataset_name}_v{latest_version.replace(".", "_")}'
         # see if the dataset already exists
         if data_dir.exists() and len(os.listdir(data_dir)) > 0:
             print('Dataset found in ', str(data_dir))
@@ -180,7 +175,7 @@ class StarCraftImage(torch.utils.data.Dataset):
             data_dir.mkdir(exist_ok=True)
             try:
                 download_and_extract_archive(
-                    url=version_dict['download_url'],
+                    url=self._versions_dict[latest_version]['download_url'],
                     download_root=data_dir,
                     filename='starcraftimage.tar.gz',
                     remove_finished=True)
@@ -192,7 +187,6 @@ class StarCraftImage(torch.utils.data.Dataset):
 
     def __str__(self):
         item = self[0]
-        
         out = '-----------------\n'
         out += f'  {self.dataset_name}\n'
         out += f'  data_dir = {self.data_dir}\n'
@@ -200,7 +194,6 @@ class StarCraftImage(torch.utils.data.Dataset):
         out += f'  num_windows = {len(self)}\n'
         out += f'  num_matches = {self.num_matches()}\n'
         out += f'  image_size = ({self.image_size}, {self.image_size})\n'
-        #out += f'  labels = {self.labels}\n'
         if type(item) is tuple:
             out += f'  getitem = {self[0]}\n'
         elif type(item) is dict:
@@ -307,7 +300,6 @@ class StarCraftImage(torch.utils.data.Dataset):
                 window_dict[f'{player_prefix}_{key}'] = stack
         return window_dict
     
-
     def _convert_dense_player_bag_to_resized_player_hyperspectral(self, dense_bag_window_dict, player_prefix,
                                                                   return_sparse_tensor=True):
         non_empty_mask = dense_bag_window_dict[f'{player_prefix}_unit_ids'] != NO_UNIT_CHANNEL
@@ -326,7 +318,6 @@ class StarCraftImage(torch.utils.data.Dataset):
                                             size=shape).coalesce()
         else:
             return idxs, values, shape
-
 
     def _convert_player_dense_bag_window_dict_to_player_sparse_window_dict(self, dense_bag_window_dict):
         player_sparse_window_dict = {}
@@ -370,7 +361,6 @@ class StarCraftImage(torch.utils.data.Dataset):
         temp_sparse = torch.sparse_coo_tensor(unique_indices.T, unique_values, shape).coalesce()
         return temp_sparse.indices().T, temp_sparse.values(), shape
     
-
     def _convert_player_hyper_idxs_values_to_dense_bag_uids_and_uvalues(self, indices, values, shape):
             # Sort by xy coordinates so that np.split can be used later
             sort_idx = np.lexsort((indices[:, 2], indices[:, 1]))
@@ -408,7 +398,6 @@ class StarCraftImage(torch.utils.data.Dataset):
             unit_values = unit_values.to_dense()
             return unit_ids, unit_values
 
-    
     def _resize_dense_player_window_dict(self, dense_player_window_dict):
         if self.image_size == EXTRACTED_IMAGE_SIZE:
             return dense_player_window_dict
@@ -447,39 +436,30 @@ class StarCraftHyper(StarCraftImage):
     def __init__(self, data_dir, **kwargs):
         super().__init__(data_dir, **kwargs)
 
-
 class _StarCraftSimpleBase(StarCraftImage):
-    def __init__(self, data_dir, transform=None, target_transform=None, **kwargs):
-        assert 'use_sparse' not in kwargs, 'use_sparse cannot be changed for StarCraftSimple datasets'
-        assert 'to_float' not in kwargs, 'for simple datasets, use transform = torchvision.transforms.ToTensor()'
-        assert kwargs.get('use_labels', True)==True, 'for simple datasets use `use_labels` cannot be false'
-        super().__init__(data_dir, use_sparse=False, **kwargs)
+    def __init__(self, 
+                    data_dir, 
+                    train=True,
+                    postprocess_metadata_fn=None,  # Function to apply to metadata after loading
+                    transform=None,  # Transform applied to image
+                    target_transform=None,  # Transform applied to label
+                    image_size=64,
+                    use_cache=False,
+                ):
+        self.postprocess_metadata_fn = postprocess_metadata_fn
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
-
-    def _process_metadata(self, md, use_labels, postprocess_metadata_fn, drop_na):
-        if use_labels:
-            if self.label_func != _default_label_func:
-                print('Computing labels using custom label function...')
-                # Add target id (i.e. class labels) based on label func
-                md['target_id'] = md.apply(self.label_func, axis=1)
-                
-            if drop_na:
-                md = md.dropna(subset=['target_id']).reset_index(drop=True)
-
-            print('Post-processing metadata')
-            assert postprocess_metadata_fn in [_postprocess_cifar10, _postprocess_mnist]
-            md = postprocess_metadata_fn(md, train=self.train)
-            md = md.reset_index(drop=True)  # Renumber rows
-            md['data_split'] = self.data_split
-
-            if drop_na:
-                md = md.dropna(subset=['target_id']).reset_index(drop=True)
-
-        else:
-            print('Not computing labels')
-            md.drop(columns='target_id', inplace=True)
+        super().__init__(data_dir, train=train, image_size=image_size, use_cache=use_cache)
+        
+    def _process_metadata(self, md, drop_na):            
+        if drop_na:
+            md = md.dropna(subset=['target_id']).reset_index(drop=True)
+        print('Post-processing metadata')
+        assert self.postprocess_metadata_fn in [_postprocess_cifar10, _postprocess_mnist]
+        md = self.postprocess_metadata_fn(md, train=self.train)
+        md = md.reset_index(drop=True)  # Renumber rows
+        md['data_split'] = self.data_split
         return md
         
 
@@ -513,17 +493,15 @@ class _StarCraftSimpleBase(StarCraftImage):
 
 
 class StarCraftCIFAR10(_StarCraftSimpleBase):
-    def __init__(self, data_dir, **kwargs):
-        assert 'image_size' not in kwargs, 'Image size is fixed to 32 for StarCraftCIFAR10'
-        assert 'postprocess_metadata_fn' not in kwargs, 'Postprocess function cannot be changed for StarCraftCIFAR10'
-        super().__init__(data_dir, image_size=32, postprocess_metadata_fn=_postprocess_cifar10, **kwargs)
+    def __init__(self, data_dir, train=True, transform=None, target_transform=None, use_cache=False):
+        super().__init__(data_dir, train=True, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
+                         transform=transform, target_transform=target_transform, use_cache=False)
 
 
 class StarCraftMNIST(_StarCraftSimpleBase):
-    def __init__(self, data_dir, label_func='default', **kwargs):
-        assert 'image_size' not in kwargs, 'Image size is fixed to 28 for StarCraftMNIST'
-        assert 'postprocess_metadata_fn' not in kwargs, 'Postprocess function cannot be changed for StarCraftMNIST'
-        super().__init__(data_dir, image_size=28, postprocess_metadata_fn=_postprocess_mnist, **kwargs)
+    def __init__(self, data_dir, train=True, transform=None, target_transform=None, use_cache=False):
+        super().__init__(data_dir, train=True, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
+                         transform=transform, target_transform=target_transform, use_cache=False)
 
     def _get_x_and_target(self, idx):
         x, target = super()._get_x_and_target(idx)
@@ -544,109 +522,6 @@ class StarCraftMNIST(_StarCraftSimpleBase):
 
         new_x = (vn * (~m2) + v2 * m2) * (~m1) + v1 * m1
         return 255.0 * new_x.unsqueeze(0), target
-
-
-# Label func
-def make_map_plus_begin_end_game_label(smd):
-    # Input is single metadata row as pandas row
-    # Output is target_id (e.g., 0-9)
-    map_id = SUBMAP_NAMES_TO_ID[smd['map_name']]
-    is_end = (smd['window_idx'] / smd['num_windows']) > 0.5
-    if map_id is not None:
-        target_id = map_id + is_end  # int + True == int + 1 and int + False == int
-    else:
-        target_id = pd.NA
-    return target_id
-
-def _default_label_func(smd):
-    return make_map_plus_begin_end_game_label(smd)
-
-
-def _postprocess_train_test_split(metadata, train, perc_train=0.9, random_state=1):
-    # First filter to only matches that are in the labels
-    metadata = pd.concat([filt_md for target_id, filt_md in _stratify_by_label(metadata)])
-    match_metadata = metadata.drop_duplicates(subset=['replay_name']).reset_index(drop=True)
-
-    # Split into train and test along unique matches
-    n_match_train = int(np.round(perc_train * len(match_metadata)))
-    perm = np.random.RandomState(random_state).permutation(len(match_metadata))
-    if train == 'all':
-        matches = match_metadata
-    elif train == True:
-        matches = match_metadata.iloc[perm[:n_match_train], :]
-    elif train == False:
-        matches = match_metadata.iloc[perm[n_match_train:], :]
-    else:
-        raise ValueError('`train` must be True, False or \'all\'')
-    # Filter based on matches
-    return _filter_by_matches(metadata, matches).sample(frac=1, random_state=0).reset_index(drop=True)  # Shuffle
-
-
-def _filter_by_matches(metadata, match_metadata):
-    metadata = metadata[metadata['replay_name'].isin(match_metadata['replay_name'])]
-    return metadata.reset_index(drop=True)
-
-
-def _postprocess_cifar10(*args, **kwargs):
-    N_TRAIN_CIFAR10 = 5000
-    N_TEST_CIFAR10 = 1000
-
-    return _postprocess_simplified(
-        *args, **kwargs,
-        n_train=N_TRAIN_CIFAR10, n_test=N_TEST_CIFAR10)
-
-
-def _postprocess_mnist(*args, **kwargs):
-    N_TRAIN_MNIST = 6000
-    N_TEST_MNIST = 1000
-    return _postprocess_simplified(
-        *args, **kwargs,
-        n_train=N_TRAIN_MNIST, n_test=N_TEST_MNIST)
-
-
-def _postprocess_simplified(metadata, train, n_train, n_test):
-    '''Filter metadata via stratified sampling. 
-    First stratify based on class. 
-    Then split based on matches. 
-    Finally, sample without replacement to get exact numbers.'''
-    return pd.concat([
-        _train_test_split_and_sample(
-            filt_md, train, n_train=n_train, n_test=n_test, random_state=np.abs(int(target_id)))
-                for target_id, filt_md, in _stratify_by_label(metadata)
-    ]).sample(frac=1, random_state=0).reset_index(drop=True)  # Shuffle rows
-
-
-def _stratify_by_label(md):
-    # Get unique target ids
-    unique_ids = md['target_id'].unique()
-    # Get metadata filtered by target id
-    for target_id in unique_ids:
-        # Filter by target_id
-        filt_md = md[md['target_id'] == target_id].reset_index(drop=True)
-        # Yield this group
-        yield target_id, filt_md
-
-
-def _train_test_split_and_sample(md, train, n_train, n_test, random_state=0):
-    '''Split into train and test based on match data. Then sample to exact n_train or n_test.'''
-    # Split roughly into train and test by matches
-    perc_train = n_train / (n_train + n_test)
-    # NOTE: This returns train or test metadata already
-    md = _postprocess_train_test_split(md, train, perc_train=perc_train)
-
-    # Randomly sample exact number of windows
-    perm = np.random.RandomState(random_state).permutation(len(md))
-
-    if train == 'all':
-        raise ValueError('For StarCraftMNIST and StarCraftCIFAR10 train=\'all\' is not an option')
-    elif train == True:
-        md = md.iloc[perm[:n_train], :]
-    elif train == False:
-        md = md.iloc[perm[:n_test], :]
-    else:
-        raise ValueError('`train` must be True, False or \'all\'')
-    return md.reset_index(drop=True)
-
 
 def starcraft_dense_ragged_collate(batch):
     '''
