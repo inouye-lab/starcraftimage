@@ -56,53 +56,41 @@ class StarCraftToImageReducer(_CheckLogitModule):
         self.neutral_dense_weight = nn.Parameter(
             self._check_logit(torch.tensor(init_neutral_dense_weight).float()))
         
-    def forward(self, d):
+    def forward(self, bag_of_units_ids, bag_of_units_values):
         with torch.no_grad():
             # Check if batch dimension exists
             channel_setup = [
-                ('player_2', self.player_unit_embed), # Red - Enemy
-                ('neutral', self.neutral_unit_embed),  # Green - Neutral
-                ('player_1', self.player_unit_embed),  # Blue - Player
+                ('player_2', self.player_unit_embed, 1), # Red - Enemy
+                ('neutral', self.neutral_unit_embed, 2),  # Green - Neutral
+                ('player_1', self.player_unit_embed, 0),  # Blue - Player
             ]
             # Embed units into single layers
             channels = [
-                self._channel_reduce(d[f'{pre}_unit_ids'], d[f'{pre}_unit_values'], embed)
-                for pre, embed in channel_setup
+                self._channel_reduce(bag_of_units_ids[:,player_chanel_idx, ...],
+                                     bag_of_units_values[:, player_chanel_idx, ...],
+                                    embed)
+                for pre, embed, player_chanel_idx in channel_setup
             ]
             # Embed other information into each layer
             channels = [
-                self._dense_channel_reduce(ch, pre, d)
-                for ch, (pre, _) in zip(channels, channel_setup)
+                self._dense_channel_reduce(ch, pre)
+                for ch, (pre, _, _) in zip(channels, channel_setup)
             ]
             x = torch.cat(channels, dim=1)  # Concatenate on channel dimension
             return x
                                     
-    def _dense_channel_reduce(self, unit, pre, d):
+    def _dense_channel_reduce(self, channel, pre):
         if pre.startswith('player'):
             w = self.player_dense_weight # (C,)
-            # map state is [is_visible, is_seen, creep]
-            # Ignoring creep for now 
-            #creep = d[f'{pre}_map_state'][:,2,:,:] # (B, H, W)
-            #dense = [creep]
-            dense = []
         else:
             w = self.neutral_dense_weight # (C,)
-            # All are (B, H, W)
-            # Ignore terrain features for now
-            #dense = [d[f'pathing_grid'], d[f'terrain_height'], d[f'placement_grid']]
-            dense = []
-        # Unsqueeze so that we can cat
-        dense = [t.unsqueeze(1) for t in dense]  # (B, 1, H, W)
-        # Combine all dense mats with unit dense
-        x = torch.cat([unit, *dense], axis=1) # (B, 1+D, H, W) where D = len(dense)
-        
         # Get weight and apply 
         if self._is_weight_logit:
             w = torch.sigmoid(w)
-        x = x * w.reshape(-1, 1, 1) # (B, 1+D, H, W)
+        channel = channel * w.reshape(-1, 1, 1) # (B, 1+D, H, W)
         
         # Reduce via max
-        return x.amax(axis=-3, keepdim=True) # (B, 1, H, W)
+        return channel.amax(axis=-3, keepdim=True) # (B, 1, H, W)
         
     def _channel_reduce(self, x, w, embed):
         '''x should be a LongTensor of shape (B, C', W, H) where

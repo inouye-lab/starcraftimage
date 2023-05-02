@@ -15,6 +15,7 @@ from .modules import StarCraftToImageReducer
 from .utils.unit_type_data import NEUTRAL_IDS as neutral_ids, NONNEUTRAL_IDS as nonneutral_ids, NO_UNIT_CHANNEL
 from .utils.metadata_processing import _postprocess_cifar10, _postprocess_mnist
 
+# Global Constants
 EXTRACTED_IMAGE_SIZE = 64
 TABULAR_KEYS = ['minerals', 'vespene', 
                 'food_used', 'food_cap', 'food_army', 'food_workers', 
@@ -29,61 +30,35 @@ _DEFAULT_10_LABELS_DICT = {
     0: ('Acolyte LE', 'Beginning'),
     1: ('Acolyte LE', 'End'),
     2: ('Abyssal Reef LE', 'Beginning'),
-    3: '(Abyssal Reef LE, End)',
+    3: ('Abyssal Reef LE', 'End'),
     4: ('Ascension to Aiur LE', 'Beginning'),
     5: ('Ascension to Aiur LE', 'End'),
     6: ('Mech Depot LE', 'Beginning'),
-    7:('Mech Depot LE', 'End'),
+    7: ('Mech Depot LE', 'End'),
     8: ('Odyssey LE', 'Beginning'),
     9: ('Odyssey LE', 'End')
 }
 
-
-################################ #TODO/#Questions ################################
-#######################################################################
-"""
-* How are we going to handle samples which don't have a y label (e.g., the two maps which are not included in the default 10 classes)? 
-  If drop them by default, this will by default drop all samples from 2/7 maps
-
-* How should the player bags be stacked?
-
-* Is it okay for the map state info to be ignored (unless the user specifies dict?)
-
-* How do we want to return everything if they do specify dict? Should we still combine all the player bags into one tensor?
-
-* Fill in docstrings for all functions
-"""
-#######################################################################
-#######################################################################
-
-
-
+_DEFAULT_14_LABELS_DICT = {
+    0:  ('Acolyte LE', 'Beginning'),
+    1:  ('Acolyte LE', 'End'),
+    2:  ('Abyssal Reef LE', 'Beginning'),
+    3:  ('Abyssal Reef LE', 'End'),
+    4:  ('Ascension to Aiur LE', 'Beginning'),
+    5:  ('Ascension to Aiur LE', 'End'),
+    6:  ('Mech Depot LE', 'Beginning'),
+    7:  ('Mech Depot LE', 'End'),
+    8:  ('Odyssey LE', 'Beginning'),
+    9:  ('Odyssey LE', 'End'),
+    10: ('Interloper LE', 'Beginning'),
+    11: ('Interloper LE', 'End'),
+    12: ('Catallena LE (Void)', 'Beginning'),
+    13: ('Catallena LE (Void)', 'End')
+}
 
 class StarCraftImage(torch.utils.data.Dataset):
     '''
-    Given a root data directory, create a StarCraft dataset (downloading if necessary)
-    from metadata and replay png files in that directory.
-
-    Params
-    ------
-    `use_sparse` : If False (default), then return dense tensors
-                   for unit information.  One is '{prefix}_unit_ids'
-                   and the other is '{prefix}_values'. Both have
-                   shape (C', W, H) where C' is the number of
-                   overlapped units for one xy coordinate.
-                   Importantly, this is variable for each
-                   instance and thus must be padded if batched
-                   together with other samples (see included 
-                   dataloader for this functionality).
-
-                   If True, then return sparse PyTorch tensors
-                   with shape (C, W, H) where C is the number of
-                   unit types (different for players vs neutral).
-
-    `to_float` :   Makes all return values except '{prefix}_unit_ids'
-                   float type via `float()`. 'unit_ids' will
-                   remain as LongTensor so they can be used with
-                   embedding layers.
+    StarCraftImage dataset.
     '''
 
 
@@ -93,39 +68,52 @@ class StarCraftImage(torch.utils.data.Dataset):
     dataset_name = 'starcraft-image-dataset'
     
     def __init__(self,
-                    root_dir='data',
+                    root_dir,
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
                     image_size=64,
-                    image_format='dense-hyperspectral-image', # other formats are 'dense-bag-of-units' and 'sparse-hyperspectral-image'
-                    to_float=True, 
-                    drop_na=True,  # Drop samples which have no default y labels
-                    return_y=False,
-                    return_dict=False,
-                    use_cache=False,
-                    download=True,
-                    ######### REMOVE BELOW #######
+                    image_format='dense-hyperspectral',  # other formats are 'sparse-hyperspectral', 'bag-of-units', 'bag-of-units-first'
+                    label_kind=None,  # other options are '14-class' or '10-class'
+                    return_label=False,  # if True, return the label as well as the image
+                    transform=None,  # An optional transform to be applied to the image (note, if bag-of-units, this must take in a tuple of (ids, values))
+                    target_transform=None,  # An optional transform to be applied to the label (return_label must be True)
+                    dict_transform=None,  # An optional transform to be applied to the dictionary (return_dict must be True)
+                    return_dict=False,  # Append a dictionary of metadata to each sample
+                    use_metadata_cache=False,  # Use cached metadata to speed up loading
+                    download=False,  # Download the dataset if not found in root_dir
                     ):
+        # Validate input parameters
+        if return_label:
+            assert label_kind in ['10-class', '14-class'], """
+            Must specify label_kind if return_label=True.
+            Use label_kind="14-class" to set the labels to pertain to the 7 map types + Beginning/End of window.
+            Or label_kind="10-class" to set the labels to pertain to 5 of the 7 map types + Beginning/End of window.
+            Note: `label_kind="10-class" will drop any samples from the remaining 2 not included maps.
+            See the `_DEFAULT_10_LABELS_DICT` and `_DEFAULT_14_LABELS_DICT` for the exact mapping.
+            """
+        assert image_format in ['dense-hyperspectral', 'bag-of-units', 'bag-of-units-first', 'sparse-hyperspectral'], \
+                    f'Invalid image_format: {image_format}'
+        assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
+        if not return_label and target_transform is not None:
+            print('\nWarning: target_transform will be ignored since return_label=False\n')
         
         self.data_dir = self._initialize_data_dir(root_dir, download)
-        assert image_format in ['dense-hyperspectral-image', 'dense-bag-of-units', 'sparse-hyperspectral-image'], \
-                    f'Invalid image_format: {image_format}'
         self.image_format = image_format
-        assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
+        self.label_kind = label_kind
+        self.transform, self.target_transform, self.dict_transform = transform, target_transform, dict_transform
         self.train = train
         self.data_split = 'train' if train==True else 'test' if train==False else 'all'
-        self.to_float = to_float
         self.return_dict = return_dict
-        self.return_y = return_y
+        self.return_label = return_label
         self.image_size = image_size
 
         # Load and process metadata (e.g., splitting to train or test)
-        self.metadata = self._process_metadata(self._load_metadata(use_cache), drop_na)
+        self.metadata = self._filter_metadata(self._load_metadata(use_metadata_cache))
 
-    def _load_metadata(self, use_cache):
+    def _load_metadata(self, use_metadata_cache):
         """
         Load metadata from csv file, optionally using a cached version. 
         """
-        if use_cache:
+        if use_metadata_cache:
             md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
             if md_cache_path.exists():
                 print('Loading cached metadata found at ', str(md_cache_path))
@@ -136,18 +124,32 @@ class StarCraftImage(torch.utils.data.Dataset):
                 md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
                 md.to_pickle(md_cache_path)
         else:
-            print('Loading metadata from csv. Note: to speed this up in the future, set `use_cache=True`')
+            print('Loading metadata from csv. Note: to speed this up in the future, set `use_metadata_cache=True`')
             md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
         return md
     
-    def _process_metadata(self, md, drop_na):
+    def _filter_metadata(self, md):
         """
-        Filter metadata to train, test, or all (set by `train`), and drop samples with no y label (if `drop_na`)."""
+        If `train=True`, filter metadata to training samples, if `train=False`, filter metadata to test samples, and
+        if `train='all'`, return all valid samples (i.e. samples that match the `label_kind`, if specified).
+
+        The train/test split is determined by the {label_kind}_data_split column in the metadata, where `label_kind`
+        can be 14-class or 10-class.
+        """
         # Filter metadata to train, test, or all
         if self.data_split != 'all':
-            md = md[md['data_split'] == self.data_split].reset_index(drop=True)  # split md to train/test/all
-        if drop_na:
-            md = md.dropna(subset=['target_id']).reset_index(drop=True)
+            # split md to train/test
+            if self.label_kind is None:
+                data_split_type = '14_class_data_split'  # The default split is the 14 class data split
+            else:
+                data_split_type = f'{self.label_kind.replace("-", "_")}_data_split'
+
+            md = md[md[data_split_type] == self.data_split].reset_index(drop=True)
+        elif self.data_split == 'all' and self.label_kind == '10-class':
+            # warn the user that we are dropping the samples from the 2 maps even though they specified train='all'
+            print('Warning: because `data_split` is set to all yet `label_kind` is set to 10-class, we are dropping all',
+                  'samples not included in the 10-class split (i.e. samples from "Interloper LE" and "Catallena LE" maps')
+            md.dropna(subset=['10_class_data_split'], inplace=True)
         return md
 
     def _clear_cache(self):
@@ -217,76 +219,54 @@ class StarCraftImage(torch.utils.data.Dataset):
         return len(self.md['replay_name'].unique())
     
     def __getitem__(self, idx):
-        # Get necessary metadata
+
+        # Create image for the idx-th window
         window_png_filepath = self._get_window_png_path(idx)
         player_window_dict = self._convert_bag_of_units_png_to_bag_of_units_dict(window_png_filepath)
-
-        if self.image_format in ['sparse-hyperspectral-image', 'dense-hyperspectral-image']:
+        if self.image_format in ['sparse-hyperspectral', 'dense-hyperspectral']:
             # convert from the dense bag of units representation to a hyperspectral image representation
             player_window_dict = self._convert_bag_of_units_dict_to_sparse_window_dict(player_window_dict)
             window_image = torch.cat([player_window_dict[f'{player}_hyperspectral'] 
                                         for player in ['player_1', 'player_2', 'neutral']], dim=0).coalesce()
-            if self.image_format == 'dense-hyperspectral-image':
+            if self.image_format == 'dense-hyperspectral':
                 window_image = window_image.to_dense()
-
         else:
             if self.image_size != EXTRACTED_IMAGE_SIZE:
                 # resize the images in the player_window_dict
                 player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
             # convert from the dense bag of units representation to a dense bag of units image representation
             window_image = self._convert_bag_of_units_dict_to_bag_of_unit_image(player_window_dict)
+            if self.image_format == 'bag-of-units-first':
+                # Only keep the first channel for each players bag of units
+                window_image = [window_image[0][:, 0, ...], window_image[1][:, 0, ...],]
              
+        # Begin constructing the return tuple, applying transforms if necessary
+        return_tuple = (window_image, ) if self.transform is None else (self.transform(window_image), )
+        if self.return_label:
+            label = self.metadata.iloc[idx]['target_id']
+            return_tuple += (label,) if self.target_transform is None else (self.target_transform(label), )            
         if self.return_dict:
             data_dict = dict(
-                image=window_image,
                 player_1_map_state=player_window_dict['player_1_map_state'],
                 player_2_map_state=player_window_dict['player_2_map_state'],
+                # Extract terrain information   ('pathing_grid', 'placement_grid', 'terrain_height')
+                **self._extract_terrain_info(idx, return_dict=True),
+                # Extract unit tabular vector ('player_1_tabular', 'player_2_tabular')
                 **self._get_unit_tabular(idx),
-                **self._get_non_unit_items(idx)
+                metadata=self.metadata.iloc[idx].to_dict(),
             ) 
-            return self._check_float(data_dict)
-        elif self.return_y:
+            return_tuple += (data_dict, ) if self.dict_transform is None else (self.dict_transform(data_dict), )
 
-            return window_image, self.metadata.iloc[idx]['target_id']
-        else:
-            return window_image
+        return self._unpack_tuple(return_tuple)
     
     def _get_unit_tabular(self, idx):
         def _get_player_tabular(md_row, player_id):
             return [md_row[f'player_{player_id}_{key}'] for key in TABULAR_KEYS]
         
-        md_row = self.metadata.iloc[idx]
         return dict(
-            player_1_tabular = torch.tensor(_get_player_tabular(md_row, 1)),
-            player_2_tabular = torch.tensor(_get_player_tabular(md_row, 2))
+            player_1_tabular = torch.tensor(_get_player_tabular(self.metadata.iloc[idx], 1)),
+            player_2_tabular = torch.tensor(_get_player_tabular(self.metadata.iloc[idx], 2))
         )
-
-    def _get_non_unit_items(self, idx):
-        # Tuples of strings can be used in dictionaries
-        md_row = self.metadata.iloc[idx]  # Single metadata entry
-        return dict(
-            # Extract terrain information   ('pathing_grid', 'placement_grid', 'terrain_height')
-            **self._extract_terrain_info(idx, return_dict=True),
-            # Extract target information
-            is_player_1_winner = self._get_is_player_1_winner(idx),
-            target_id = torch.tensor(md_row['target_id']),
-        )
-
-    def _check_float(self, data_dict):
-        def _try_float(k, v):
-            if k.endswith('unit_ids') or k in ['target_id', 'is_player_1_winner']:
-                return v.to(torch.int64)
-            try:
-                v = v.float()
-            except AttributeError:
-                pass  # Ignore if not tensor
-            return v
-        if self.to_float:
-            # Preserve LongTensor of unit_ids tensors otherwise convert
-            return {k:_try_float(k, v) 
-                    for k, v in data_dict.items()}
-        else:
-            return data_dict
 
     def _get_window_png_path(self, idx):
         md_row = self.metadata.iloc[idx]
@@ -323,17 +303,18 @@ class StarCraftImage(torch.utils.data.Dataset):
         return window_dict
     
     def _convert_bag_of_units_dict_to_bag_of_unit_image(self, player_window_dict):
-        window_image = []
+        image_unit_values = []
+        image_unit_ids = []
         max_bag_size = -1
         for player_prefix in ['player_1', 'player_2', 'neutral']:
-            for key in ['unit_values', 'unit_ids']:
-                window_image.append(player_window_dict[f'{player_prefix}_{key}'])
-                max_bag_size = max(max_bag_size, window_image[-1].shape[0])
+            image_unit_values.append(player_window_dict[f'{player_prefix}_unit_values'])
+            image_unit_ids.append(player_window_dict[f'{player_prefix}_unit_ids'])
+            max_bag_size = max(max_bag_size, image_unit_ids[-1].shape[0])
         # pad the bag of units to the max bag size so we can then stack them
-        for i in range(len(window_image)):
-            window_image[i] = torch.cat(
-                [ window_image[i], torch.zeros(max_bag_size - window_image[i].shape[0], *window_image[i].shape[1:]) ])
-        return torch.stack(window_image, dim=0)
+        for i in range(len(image_unit_values)):
+            image_unit_values[i] = self._zero_pad_channel(image_unit_values[i], max_bag_size)
+            image_unit_ids[i] = self._zero_pad_channel(image_unit_ids[i], max_bag_size)
+        return torch.stack(image_unit_ids, dim=0).long(), torch.stack(image_unit_values, dim=0)
 
     def _convert_dense_player_bag_to_resized_player_hyperspectral(self, bag_window_dict, player_prefix,
                                                                   return_sparse_tensor=True):
@@ -449,6 +430,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         return dense_player_window_dict
 
     def _extract_terrain_info(self, idx, return_dict=True):
+
         map_name = self.metadata.iloc[idx]['map_name']
         terrain_filepath = os.path.join(self.data_dir, 'map_png_files', map_name + '.png')
         terrain_images = io.read_image(terrain_filepath).squeeze()
@@ -466,7 +448,27 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             return terrain_images['pathing_grid'], terrain_images['placement_grid'], terrain_images['terrain_height']
     
+    def _unpack_tuple(self, tup):
+        if len(tup) == 1:
+            return tup[0]
+        else:
+            return tup
 
+    def _zero_pad_channel(self, image, desired_channel_size):
+        """
+        Zero pads the channel dimension of an image to the desired size. 
+        Assumes a shape of (n_channels, height, width) or (height, width).
+        """
+        if image.ndim == 2:
+            image = image.unsqueeze(0)
+
+        assert image.ndim == 3, f'Expected image to have 3 dimensions, but got {image.ndim} dimensions'
+
+        if image.shape[0] == desired_channel_size:
+            return image
+        else:
+            return torch.cat([image, torch.zeros((desired_channel_size - image.shape[0], *image.shape[1:]))], dim=0)
+        
 class StarCraftHyper(StarCraftImage):
     def __init__(self, root_dir, **kwargs):
         super().__init__(root_dir, **kwargs)
@@ -479,22 +481,23 @@ class _StarCraftSimpleBase(StarCraftImage):
                     transform=None,  # Transform applied to image
                     target_transform=None,  # Transform applied to label
                     image_size=64,
-                    use_cache=False,
+                    use_metadata_cache=False,
+                    download=False
                 ):
         self.postprocess_metadata_fn = postprocess_metadata_fn
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
-        super().__init__(root_dir, train=train, image_size=image_size, use_cache=use_cache)
+        super().__init__(root_dir, train=True, image_size=image_size, image_format='bag-of-units',
+                         use_metadata_cache=use_metadata_cache, return_label=True, label_kind='10-class',
+                         return_dict=False, download=download)
         
-    def _process_metadata(self, md, drop_na):            
-        if drop_na:
-            md = md.dropna(subset=['target_id']).reset_index(drop=True)
+    def _filter_metadata(self, md):            
         print('Post-processing metadata')
         assert self.postprocess_metadata_fn in [_postprocess_cifar10, _postprocess_mnist]
         md = self.postprocess_metadata_fn(md, train=self.train)
         md = md.reset_index(drop=True)  # Renumber rows
-        md['data_split'] = self.data_split
+        md['10_class_data_split'] = self.data_split
         return md
         
 
@@ -518,25 +521,27 @@ class _StarCraftSimpleBase(StarCraftImage):
         return img, target
 
     def _get_x_and_target(self, idx):
-        # Get hyperspectral dictionary
-        d = super().__getitem__(idx)
-        # Create batch of size 1 and then extract output
-        x = self._reduce_to_image(sc_collate([d]))[0]
-        # Get target id directly from already extracted dictionary
-        target = d['target_id']
+        # Get bag-of-units representation
+        (bag_of_units_ids, bag_of_units_values), target = super().__getitem__(idx)
+        # Flatten to image
+        x = self._reduce_to_image(bag_of_units_ids.unsqueeze(0), bag_of_units_values.unsqueeze(0))[0]
         return x, target
 
 
 class StarCraftCIFAR10(_StarCraftSimpleBase):
-    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_cache=False):
-        super().__init__(root_dir, train=True, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
-                         transform=transform, target_transform=target_transform, use_cache=False)
+    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_metadata_cache=False,
+                 download=False):
+        super().__init__(root_dir, train=train, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
+                         transform=transform, target_transform=target_transform, use_metadata_cache=use_metadata_cache,
+                         download=download)
 
 
 class StarCraftMNIST(_StarCraftSimpleBase):
-    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_cache=False):
-        super().__init__(root_dir, train=True, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
-                         transform=transform, target_transform=target_transform, use_cache=False)
+    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_metadata_cache=False, 
+                 download=False):
+        super().__init__(root_dir, train=train, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
+                         transform=transform, target_transform=target_transform, use_metadata_cache=use_metadata_cache,
+                         download=download)
 
     def _get_x_and_target(self, idx):
         x, target = super()._get_x_and_target(idx)

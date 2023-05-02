@@ -47,6 +47,10 @@ def _postprocess_simplified(metadata, train, n_train, n_test):
     First stratify based on class. 
     Then split based on matches. 
     Finally, sample without replacement to get exact numbers.'''
+    # drop all rows which are not in the 10 class data split
+    metadata.dropna(subset=['10_class_data_split'], inplace=True)
+    metadata.reset_index(drop=True, inplace=True)
+    metadata.drop(columns=['14_class_data_split'], inplace=True)
     return pd.concat([
         _train_test_split_and_sample(
             filt_md, train, n_train=n_train, n_test=n_test, random_state=np.abs(int(target_id)))
