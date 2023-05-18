@@ -9,6 +9,7 @@ import torch
 import torchvision.transforms.functional
 from torchvision import io
 from torchvision.datasets.utils import download_and_extract_archive
+from torchvision.datasets import MNIST, CIFAR10
 import PIL
 
 from .modules import StarCraftToImageReducer
@@ -152,7 +153,7 @@ class StarCraftImage(torch.utils.data.Dataset):
             md.dropna(subset=['10_class_data_split'], inplace=True)
         return md
 
-    def _clear_cache(self):
+    def clear_cache(self):
         md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
         if md_cache_path.exists():
             md_cache_path.unlink()
@@ -473,22 +474,30 @@ class StarCraftHyper(StarCraftImage):
     def __init__(self, root_dir, **kwargs):
         super().__init__(root_dir, **kwargs)
 
-class _StarCraftSimpleBase(StarCraftImage):
+class StarCraftSimple(StarCraftImage):
     def __init__(self, 
                     root_dir, 
                     train=True,
-                    postprocess_metadata_fn=None,  # Function to apply to metadata after loading
+                    image_format=None,  # Must be 'mnist' or 'cifar10'
                     transform=None,  # Transform applied to image
                     target_transform=None,  # Transform applied to label
-                    image_size=64,
                     use_metadata_cache=False,
                     download=False
                 ):
-        self.postprocess_metadata_fn = postprocess_metadata_fn
+        if image_format.lower() == 'mnist':
+            self.is_mnist = True
+            self.postprocess_metadata_fn = _postprocess_mnist
+            image_size = 28
+        elif image_format.lower() == 'cifar10':
+            self.is_mnist = False
+            self.postprocess_metadata_fn = _postprocess_cifar10
+            image_size = 32
+        else:
+            raise ValueError(f'Unrecognized image_format: {image_format}. Must be "mnist" or "cifar10"')
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
-        super().__init__(root_dir, train=True, image_size=image_size, image_format='bag-of-units',
+        super().__init__(root_dir, train=train, image_size=image_size, image_format='bag-of-units',
                          use_metadata_cache=use_metadata_cache, return_label=True, label_kind='10-class',
                          return_dict=False, download=download)
         
@@ -503,6 +512,8 @@ class _StarCraftSimpleBase(StarCraftImage):
 
     def __getitem__(self, idx):
         x, target = self._get_x_and_target(idx)
+        if self.is_mnist:
+            x = self._flatten_to_mnist(x)
 
         # Return as PIL image
         if x.shape[0] == 1:  # Grayscale
@@ -528,24 +539,7 @@ class _StarCraftSimpleBase(StarCraftImage):
         return x, target
 
 
-class StarCraftCIFAR10(_StarCraftSimpleBase):
-    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_metadata_cache=False,
-                 download=False):
-        super().__init__(root_dir, train=train, image_size=32, postprocess_metadata_fn=_postprocess_cifar10,
-                         transform=transform, target_transform=target_transform, use_metadata_cache=use_metadata_cache,
-                         download=download)
-
-
-class StarCraftMNIST(_StarCraftSimpleBase):
-    def __init__(self, root_dir, train=True, transform=None, target_transform=None, use_metadata_cache=False, 
-                 download=False):
-        super().__init__(root_dir, train=train, image_size=28, postprocess_metadata_fn=_postprocess_mnist,
-                         transform=transform, target_transform=target_transform, use_metadata_cache=use_metadata_cache,
-                         download=download)
-
-    def _get_x_and_target(self, idx):
-        x, target = super()._get_x_and_target(idx)
-
+    def _flatten_to_mnist(self, x):
         # Reorder RGB to get in terms of player 1, player 2 and neutral
         #  and get corresponding masks
         x_ordered = x[[2,0,1], :, :] / 255.0
@@ -561,7 +555,79 @@ class StarCraftMNIST(_StarCraftSimpleBase):
         v1, v2, vn = [(sc[0] + (sc[1] - sc[0]) * v) for v, sc in zip(x_ordered, scales)]
 
         new_x = (vn * (~m2) + v2 * m2) * (~m1) + v1 * m1
-        return 255.0 * new_x.unsqueeze(0), target
+        return 255.0 * new_x.unsqueeze(0)
+
+
+class StarCraftCIFAR10(CIFAR10):
+    """
+    Args:
+        root (string): Root directory of dataset where directory
+            ``starcraft-cifar10-batches-py`` exists or will be saved to if download is set to True.
+        train (bool, optional): If True, creates dataset from training set, otherwise
+            creates from test set.
+        transform (callable, optional): A function/transform that takes in an PIL image
+            and returns a transformed version. E.g, ``transforms.RandomCrop``
+        target_transform (callable, optional): A function/transform that takes in the
+            target and transforms it.
+        download (bool, optional): If true, downloads the dataset from the internet and
+            puts it in root directory. If dataset is already downloaded, it is not
+            downloaded again.
+    """
+    train_list = [
+        ['data_batch_1', '7d157e26485497ed3e0497f97c9915db'],
+        ['data_batch_2', 'a9f4a3467061ae5d9d7facf084793410'],
+        ['data_batch_3', 'b6a028a4d048537db2032cf51c6100a2'],
+        ['data_batch_4', 'eda40b034b1021cdbee368a334b5e36e'],
+        ['data_batch_5', '9581af43c6829ea1b9b70fed797ce30a'],
+    ]
+
+    test_list = [
+        ['test_batch', 'b73092fd8a15e652c89db963856ecb2e']
+        ]
+
+
+    base_folder = "starcraft-cifar10-batches-py"
+    url = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+    filename = "starcraft-cifar10.tar.gz"
+    tgz_md5 = "2b67b24c2913dd46256b40d325e8502e"
+
+    meta = {
+        "filename": "batches.meta",
+        "key": "label_names",
+        "md5": "0e1fa6f9304e57fa882c4883d16da1b5",
+    }    
+
+
+class StarCraftMNIST(MNIST):
+    """
+    Args:
+    root (string): Root directory of dataset where ``StarCraftMNIST/raw/train-images-idx3-ubyte``
+        and  ``FashionMNIST/raw/t10k-images-idx3-ubyte`` exist.
+    train (bool, optional): If True, creates dataset from ``train-images-idx3-ubyte``,
+        otherwise from ``t10k-images-idx3-ubyte``.
+    download (bool, optional): If True, downloads the dataset from the internet and
+        puts it in root directory. If dataset is already downloaded, it is not
+        downloaded again.
+    transform (callable, optional): A function/transform that  takes in an PIL image
+        and returns a transformed version. E.g, ``transforms.RandomCrop``
+    target_transform (callable, optional): A function/transform that takes in the
+        target and transforms it.
+    """
+    mirrors = ["XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"]
+
+    resources = [
+        ('train-labels-idx1-ubyte', 'f26bff8521211ed484ce0b5f1589e7be'),
+        ('train-images-idx3-ubyte', '4158a809e51cb04a43bad4ddbaa345a6'),
+        ('t10k-labels-idx1-ubyte', 'fa2b5e810a63779e3550d98d760c45ce'),
+        ('t10k-images-idx3-ubyte', '59556ae912d4d004bb18422248386a61')
+    ]
+    classes = [
+        ('Acolyte LE', 'Beginning'), ('Acolyte LE', 'End'),
+        ('Abyssal Reef LE', 'Beginning'), ('Abyssal Reef LE', 'End'),
+        ('Ascension to Aiur LE', 'Beginning'), ('Ascension to Aiur LE', 'End'),
+        ('Mech Depot LE', 'Beginning'), ('Mech Depot LE', 'End'),
+        ('Odyssey LE', 'Beginning'), ('Odyssey LE', 'End')
+    ]
 
 def starcraft_dense_ragged_collate(batch):
     '''
