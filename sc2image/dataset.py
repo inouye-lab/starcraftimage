@@ -64,7 +64,7 @@ class StarCraftImage(torch.utils.data.Dataset):
 
 
     _versions_dict = {  # Note, this only includes major and minor versions
-                '1.0': {'download_url': 'xxx'}
+                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40680203?private_link=299e655eb484ec91a463'}
             }
     dataset_name = 'starcraft-image-dataset'
     
@@ -562,7 +562,7 @@ class StarCraftCIFAR10(CIFAR10):
     """
     Args:
         root (string): Root directory of dataset where directory
-            ``starcraft-cifar10-batches-py`` exists or will be saved to if download is set to True.
+            ``StarCraftCIFAR10`` exists or will be saved to if download is set to True.
         train (bool, optional): If True, creates dataset from training set, otherwise
             creates from test set.
         transform (callable, optional): A function/transform that takes in an PIL image
@@ -586,10 +586,10 @@ class StarCraftCIFAR10(CIFAR10):
         ]
 
 
-    base_folder = "starcraft-cifar10-batches-py"
-    url = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+    base_folder = "StarCraftCIFAR10"
+    url = 'https://figshare.com/ndownloader/files/40706735?private_link=299e655eb484ec91a463'
     filename = "starcraft-cifar10.tar.gz"
-    tgz_md5 = "2b67b24c2913dd46256b40d325e8502e"
+    tgz_md5 = "65bf8e877a36c1c12f294b3efc0b59df"
 
     meta = {
         "filename": "batches.meta",
@@ -613,7 +613,9 @@ class StarCraftMNIST(MNIST):
     target_transform (callable, optional): A function/transform that takes in the
         target and transforms it.
     """
-    mirrors = ["XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"]
+    mirrors = ["https://figshare.com/ndownloader/files/40707728?private_link=299e655eb484ec91a463"]
+    tgz_filename = "starcraft-mnist.tar.gz"
+    tgz_md5 = "b0009b9b6b9cea84a4da938af60d7f03"
 
     resources = [
         ('train-labels-idx1-ubyte', 'f26bff8521211ed484ce0b5f1589e7be'),
@@ -628,6 +630,18 @@ class StarCraftMNIST(MNIST):
         ('Mech Depot LE', 'Beginning'), ('Mech Depot LE', 'End'),
         ('Odyssey LE', 'Beginning'), ('Odyssey LE', 'End')
     ]
+
+    def download(self) -> None:
+        """Download the StarCraftMNIST data if it doesn't exist already"""
+     
+        if self._check_exists():
+            return
+
+        os.makedirs(self.raw_folder, exist_ok=True)
+
+        download_and_extract_archive(self.mirrors[0], download_root=self.raw_folder,
+                                     filename=self.tgz_filename, md5=self.tgz_md5)
+
 
 def starcraft_dense_ragged_collate(batch):
     '''
