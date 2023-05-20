@@ -1,5 +1,4 @@
-
-# taken and edited from https://github.com/Blizzard/s2client-api/blob/master/include/sc2api/sc2_typeenums.h
+"""Taken and edited from https://github.com/Blizzard/s2client-api/blob/master/include/sc2api/sc2_typeenums.h"""
 
 # Terran
 TERRAN_NAME_TO_ID = {

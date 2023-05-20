@@ -26,38 +26,6 @@ def _filter_by_matches(metadata, match_metadata):
     return metadata.reset_index(drop=True)
 
 
-def _postprocess_cifar10(*args, **kwargs):
-    n_train = kwargs.get('n_train', 5000)  # number of training samples **per class**
-    n_test = kwargs.get('n_test', 1000)  # number of test samples **per class**
-    return _postprocess_simplified(
-        *args, **kwargs,
-        n_train=n_train, n_test=n_test)
-
-
-def _postprocess_mnist(*args, **kwargs):
-    n_train = kwargs.get('n_train', 6000)  # number of training samples **per class**
-    n_test = kwargs.get('n_test', 1000)  # number of test samples **per class**
-    return _postprocess_simplified(
-        *args, **kwargs,
-        n_train=n_train, n_test=n_test)
-
-
-def _postprocess_simplified(metadata, train, n_train, n_test):
-    '''Filter metadata via stratified sampling. 
-    First stratify based on class. 
-    Then split based on matches. 
-    Finally, sample without replacement to get exact numbers.'''
-    # drop all rows which are not in the 10 class data split
-    metadata.dropna(subset=['10_class_data_split'], inplace=True)
-    metadata.reset_index(drop=True, inplace=True)
-    metadata.drop(columns=['14_class_data_split'], inplace=True)
-    return pd.concat([
-        _train_test_split_and_sample(
-            filt_md, train, n_train=n_train, n_test=n_test, random_state=np.abs(int(target_id)))
-                for target_id, filt_md, in _stratify_by_label(metadata)
-    ]).sample(frac=1, random_state=0).reset_index(drop=True)  # Shuffle rows
-
-
 def _stratify_by_label(md):
     # Get unique target ids
     unique_ids = md['target_id'].unique()

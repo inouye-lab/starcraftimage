@@ -10,11 +10,8 @@ import torchvision.transforms.functional
 from torchvision import io
 from torchvision.datasets.utils import download_and_extract_archive
 from torchvision.datasets import MNIST, CIFAR10
-import PIL
 
-from .modules import StarCraftToImageReducer
 from .utils.unit_type_data import NEUTRAL_IDS as neutral_ids, NONNEUTRAL_IDS as nonneutral_ids, NO_UNIT_CHANNEL
-from .utils.metadata_processing import _postprocess_cifar10, _postprocess_mnist
 
 # Global Constants
 EXTRACTED_IMAGE_SIZE = 64
@@ -64,15 +61,16 @@ class StarCraftImage(torch.utils.data.Dataset):
 
 
     _versions_dict = {  # Note, this only includes major and minor versions
-                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40680203?private_link=299e655eb484ec91a463'}
+                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40716512?private_link=299e655eb484ec91a463',
+                        'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
             }
     dataset_name = 'starcraft-image-dataset'
     
     def __init__(self,
                     root_dir,
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
-                    image_size=64,
                     image_format='dense-hyperspectral',  # other formats are 'sparse-hyperspectral', 'bag-of-units', 'bag-of-units-first'
+                    image_size=64,
                     label_kind=None,  # other options are '14-class' or '10-class'
                     return_label=False,  # if True, return the label as well as the image
                     transform=None,  # An optional transform to be applied to the image (note, if bag-of-units, this must take in a tuple of (ids, values))
@@ -82,6 +80,41 @@ class StarCraftImage(torch.utils.data.Dataset):
                     use_metadata_cache=False,  # Use cached metadata to speed up loading
                     download=False,  # Download the dataset if not found in root_dir
                     ):
+        """
+        The main class for the StarCraftImage dataset.
+
+        Args:
+            root_dir (str): Path to the root directory where the ``starcraft-image-dataset`` directory exists or will be
+                saved to if download is set to True.
+            train (bool): Whether to return the training or test set. If True, returns the training set. If False, 
+                returns the test set. If 'all', returns the entire dataset.
+            image_format (str): The desired image format. Must be ``"dense-hyperspectral"``, ``"sparse-hyperspectral"``, 
+                ``"bag-of-units"``, or ``"bag-of-units-first"``.  
+                The ``dense-hyperspectral`` format returns a (270,``image_size``,``image_size``) dense tensor.
+                The ``sparse-hyperspectral`` format returns a (270,``image_size``,``image_size``) sparse tensor.
+                The ``bag-of-units`` format returns tuple of (unit_ids_bag, unit_values_bag) where both elements are a
+                (3*``C``, ``image_size``,``image_size``) dense tensor where ``C`` is equivalent to the number of 
+                overlapping units at any spatial location and the ordering corresponds to 
+                ``(player_1_channels, player_2_channels, neutral_channels)``.
+                The ``bag-of-units-first`` format returns tuple of (unit_ids_bag, unit_values_bag) where both elements
+                are a (3, ``image_size``,``image_size```) dense tensor, and is equivalent to always returning the first
+                overlapping dimension of the ``bag-of-units`` representation.
+            image_size (int): The height and width of the returned image. Cannot be above 64.
+            label_kind (None or str): Specifies the type of label to return, can either be ``None``, ``"14-class"``,
+                or ``"10-class"``. If None (default), no label is returned.
+            return_label (bool): If True, returns the label as well as the image.
+            transform (callable, optional): A function/transform that takes in the corresponding ``image_format`` 
+                output and returns a transformed version. E.g, ``transforms.RandomCrop``
+            target_transform (callable, optional): A function/transform that takes in the target label (if any)
+                and transforms it.
+            dict_transform (callable, optional): A function/transform that takes in the metadata dictionary and
+                transforms it.
+            return_dict (bool): If True, returns a dictionary of metadata as well as the image (and possibly label).
+            use_metadata_cache: Loads the metadata from a cached file if it exists. If False, the metadata is
+                loaded using the metadata.csv file (which is slower)
+            download (bool, optional): If true, downloads the dataset from the internet and
+                puts it in root directory. If dataset is already downloaded, it is not
+                downloaded again."""
         # Validate input parameters
         if return_label:
             assert label_kind in ['10-class', '14-class'], """
@@ -91,6 +124,9 @@ class StarCraftImage(torch.utils.data.Dataset):
             Note: `label_kind="10-class" will drop any samples from the remaining 2 not included maps.
             See the `_DEFAULT_10_LABELS_DICT` and `_DEFAULT_14_LABELS_DICT` for the exact mapping.
             """
+        else:
+            assert label_kind is None, 'label_kind must be None if return_label=False'
+
         assert image_format in ['dense-hyperspectral', 'bag-of-units', 'bag-of-units-first', 'sparse-hyperspectral'], \
                     f'Invalid image_format: {image_format}'
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
@@ -186,6 +222,7 @@ class StarCraftImage(torch.utils.data.Dataset):
             try:
                 download_and_extract_archive(
                     url=self._versions_dict[latest_version]['download_url'],
+                    md5=self._versions_dict[latest_version]['md5'],
                     download_root=data_dir,
                     filename='starcraftimage.tar.gz',
                     remove_finished=True)
@@ -237,9 +274,10 @@ class StarCraftImage(torch.utils.data.Dataset):
                 player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
             # convert from the dense bag of units representation to a dense bag of units image representation
             window_image = self._convert_bag_of_units_dict_to_bag_of_unit_image(player_window_dict)
+            # Note: window image is a tuple of (unit_ids, unit_values)
             if self.image_format == 'bag-of-units-first':
                 # Only keep the first channel for each players bag of units
-                window_image = [window_image[0][:, 0, ...], window_image[1][:, 0, ...],]
+                window_image = (window_image[0][:, 0, ...], window_image[1][:, 0, ...],)
              
         # Begin constructing the return tuple, applying transforms if necessary
         return_tuple = (window_image, ) if self.transform is None else (self.transform(window_image), )
@@ -470,93 +508,6 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             return torch.cat([image, torch.zeros((desired_channel_size - image.shape[0], *image.shape[1:]))], dim=0)
         
-class StarCraftHyper(StarCraftImage):
-    def __init__(self, root_dir, **kwargs):
-        super().__init__(root_dir, **kwargs)
-
-class StarCraftSimple(StarCraftImage):
-    def __init__(self, 
-                    root_dir, 
-                    train=True,
-                    image_format=None,  # Must be 'mnist' or 'cifar10'
-                    transform=None,  # Transform applied to image
-                    target_transform=None,  # Transform applied to label
-                    use_metadata_cache=False,
-                    download=False
-                ):
-        if image_format.lower() == 'mnist':
-            self.is_mnist = True
-            self.postprocess_metadata_fn = _postprocess_mnist
-            image_size = 28
-        elif image_format.lower() == 'cifar10':
-            self.is_mnist = False
-            self.postprocess_metadata_fn = _postprocess_cifar10
-            image_size = 32
-        else:
-            raise ValueError(f'Unrecognized image_format: {image_format}. Must be "mnist" or "cifar10"')
-        self._reduce_to_image = StarCraftToImageReducer()
-        self.transform = transform
-        self.target_transform = target_transform
-        super().__init__(root_dir, train=train, image_size=image_size, image_format='bag-of-units',
-                         use_metadata_cache=use_metadata_cache, return_label=True, label_kind='10-class',
-                         return_dict=False, download=download)
-        
-    def _filter_metadata(self, md):            
-        print('Post-processing metadata')
-        assert self.postprocess_metadata_fn in [_postprocess_cifar10, _postprocess_mnist]
-        md = self.postprocess_metadata_fn(md, train=self.train)
-        md = md.reset_index(drop=True)  # Renumber rows
-        md['10_class_data_split'] = self.data_split
-        return md
-        
-
-    def __getitem__(self, idx):
-        x, target = self._get_x_and_target(idx)
-        if self.is_mnist:
-            x = self._flatten_to_mnist(x)
-
-        # Return as PIL image
-        if x.shape[0] == 1:  # Grayscale
-            img = PIL.Image.fromarray(x.squeeze(0).type(torch.uint8).numpy(), mode='L')
-        elif x.shape[0] == 3:  # RGB
-            img = PIL.Image.fromarray(x.permute(1,2,0).type(torch.uint8).numpy(), mode='RGB')
-        else:
-            raise RuntimeError('x should have 1 or 3 channels')
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-    def _get_x_and_target(self, idx):
-        # Get bag-of-units representation
-        (bag_of_units_ids, bag_of_units_values), target = super().__getitem__(idx)
-        # Flatten to image
-        x = self._reduce_to_image(bag_of_units_ids.unsqueeze(0), bag_of_units_values.unsqueeze(0))[0]
-        return x, target
-
-
-    def _flatten_to_mnist(self, x):
-        # Reorder RGB to get in terms of player 1, player 2 and neutral
-        #  and get corresponding masks
-        x_ordered = x[[2,0,1], :, :] / 255.0
-        m1, m2, mn = (x_ordered > 0)
-
-        # Normalize neutral
-        n = x_ordered[2, :, :]
-        x_ordered[2, :, :] = (n - n.min()) / (n.max() - n.min())
-
-        # Rescale values
-        # NOTE: for player 2 it is 0.4 to 0 (so it becomes a negative multiplier)
-        scales = np.array([[0.55, 1], [0.45, 0], [0.48, 0.52]])
-        v1, v2, vn = [(sc[0] + (sc[1] - sc[0]) * v) for v, sc in zip(x_ordered, scales)]
-
-        new_x = (vn * (~m2) + v2 * m2) * (~m1) + v1 * m1
-        return 255.0 * new_x.unsqueeze(0)
-
 
 class StarCraftCIFAR10(CIFAR10):
     """
@@ -646,7 +597,7 @@ class StarCraftMNIST(MNIST):
 def starcraft_dense_ragged_collate(batch):
     '''
     Function to be passed as `collate_fn` to torch.utils.data.DataLoader
-    when using use_sparse=False (default) for StarCraftImage.
+    when using use_sparse=False for StarCraftImage.
     This handles padding the dense tensors so they have the same shape
     in each batch.
 

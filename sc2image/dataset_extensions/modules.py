@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils.unit_type_data import NONNEUTRAL_IDS, NEUTRAL_IDS
+from sc2image.utils.unit_type_data import NONNEUTRAL_IDS, NEUTRAL_IDS
 
 
 class _CheckLogitModule(nn.Module):
