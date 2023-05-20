@@ -61,7 +61,7 @@ class StarCraftImage(torch.utils.data.Dataset):
 
 
     _versions_dict = {  # Note, this only includes major and minor versions
-                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40716512?private_link=299e655eb484ec91a463',
+                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405?private_link=b935a84ebec219fb64ef',
                         'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
             }
     dataset_name = 'starcraft-image-dataset'
@@ -538,7 +538,7 @@ class StarCraftCIFAR10(CIFAR10):
 
 
     base_folder = "StarCraftCIFAR10"
-    url = 'https://figshare.com/ndownloader/files/40706735?private_link=299e655eb484ec91a463'
+    url = 'https://figshare.com/ndownloader/files/40719791?private_link=b935a84ebec219fb64ef'
     filename = "starcraft-cifar10.tar.gz"
     tgz_md5 = "65bf8e877a36c1c12f294b3efc0b59df"
 
@@ -564,9 +564,9 @@ class StarCraftMNIST(MNIST):
     target_transform (callable, optional): A function/transform that takes in the
         target and transforms it.
     """
-    mirrors = ["https://figshare.com/ndownloader/files/40707728?private_link=299e655eb484ec91a463"]
+    mirrors = ["https://figshare.com/ndownloader/files/40720142?private_link=b935a84ebec219fb64ef"]
     tgz_filename = "starcraft-mnist.tar.gz"
-    tgz_md5 = "b0009b9b6b9cea84a4da938af60d7f03"
+    tgz_md5 = "f94a6b0edec26591cd679ee3bb15bdfd"
 
     resources = [
         ('train-labels-idx1-ubyte', 'f26bff8521211ed484ce0b5f1589e7be'),
