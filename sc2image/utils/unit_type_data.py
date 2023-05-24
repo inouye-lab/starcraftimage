@@ -254,14 +254,15 @@ def _add_special(name_to_id):
     # Update name_to_id with specials and get reverse
     name_to_id = {**SPECIAL_NAME_TO_ID, **name_to_id}
     id_to_name = {v: k for k, v in name_to_id.items()}
-    return name_to_id, id_to_name, channel_to_id, id_to_channel
+    channel_to_name = {ch: id_to_name[id] for id, ch in id_to_channel.items()}
+    return name_to_id, id_to_name, channel_to_id, id_to_channel, channel_to_name
 
 _result = _add_special({**TERRAN_NAME_TO_ID, **PROTOSS_NAME_TO_ID, **ZERG_NAME_TO_ID})
-NONNEUTRAL_NAME_TO_ID, NONNEUTRAL_ID_TO_NAME, NONNEUTRAL_CHANNEL_TO_ID, NONNEUTRAL_ID_TO_CHANNEL  = _result
+NONNEUTRAL_NAME_TO_ID, NONNEUTRAL_ID_TO_NAME, NONNEUTRAL_CHANNEL_TO_ID, NONNEUTRAL_ID_TO_CHANNEL, NONNEUTRAL_CHANNEL_TO_NAME  = _result
 NONNEUTRAL_IDS = NONNEUTRAL_CHANNEL_TO_ID  # Alias
 
 _result = _add_special(NEUTRAL_NAME_TO_ID)
-NEUTRAL_NAME_TO_ID, NEUTRAL_ID_TO_NAME, NEUTRAL_CHANNEL_TO_ID, NEUTRAL_ID_TO_CHANNEL  = _result
+NEUTRAL_NAME_TO_ID, NEUTRAL_ID_TO_NAME, NEUTRAL_CHANNEL_TO_ID, NEUTRAL_ID_TO_CHANNEL, NEUTRAL_CHANNEL_TO_NAME  = _result
 NEUTRAL_IDS = NEUTRAL_CHANNEL_TO_ID  # Alias
 
 # More stable way where order is fixed and will always be the same
