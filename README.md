@@ -1,7 +1,6 @@
 # StarCraftImage Dataset
 
-Welcome! This is the repository for the StarCraftImage dataset from the paper: `StarCraftImage: A Dataset For Prototyping Spatial Reasoning
-Methods For Multi-Agent Environments`
+Welcome! This is the repository for the StarCraftImage dataset from the paper: `StarCraftImage: A Dataset For Prototyping Spatial Reasoning Methods For Multi-Agent Environments`
 
 ## Quickstart
 To use the dataset, you can import it and instantiate the dataset using the following:
