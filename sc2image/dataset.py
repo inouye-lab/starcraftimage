@@ -57,7 +57,7 @@ _DEFAULT_14_LABELS_DICT = {
 class StarCraftImage(torch.utils.data.Dataset):
     """The StarCraftImage dataset."""
     _versions_dict = {  # Note, this only includes major and minor versions
-                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405?private_link=b935a84ebec219fb64ef',
+                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405',
                         'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
             }
     dataset_name = 'starcraft-image-dataset'
@@ -585,7 +585,7 @@ class StarCraftCIFAR10(CIFAR10):
 
 
     base_folder = "StarCraftCIFAR10"
-    url = 'https://figshare.com/ndownloader/files/40719791?private_link=b935a84ebec219fb64ef'
+    url = 'https://figshare.com/ndownloader/files/40719791'
     filename = "starcraft-cifar10.tar.gz"
     tgz_md5 = "65bf8e877a36c1c12f294b3efc0b59df"
 
@@ -611,7 +611,7 @@ class StarCraftMNIST(MNIST):
     target_transform (callable, optional): A function/transform that takes in the
         target and transforms it.
     """
-    mirrors = ["https://figshare.com/ndownloader/files/40720142?private_link=b935a84ebec219fb64ef"]
+    mirrors = ["https://figshare.com/ndownloader/files/40720142"]
     tgz_filename = "starcraft-mnist.tar.gz"
     tgz_md5 = "f94a6b0edec26591cd679ee3bb15bdfd"
 
@@ -631,7 +631,7 @@ class StarCraftMNIST(MNIST):
 
     def download(self) -> None:
         """Download the StarCraftMNIST data if it doesn't exist already"""
-     
+
         if self._check_exists():
             return
 
