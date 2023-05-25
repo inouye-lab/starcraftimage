@@ -55,11 +55,7 @@ _DEFAULT_14_LABELS_DICT = {
 }
 
 class StarCraftImage(torch.utils.data.Dataset):
-    '''
-    StarCraftImage dataset.
-    '''
-
-
+    """The StarCraftImage dataset."""
     _versions_dict = {  # Note, this only includes major and minor versions
                 '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405?private_link=b935a84ebec219fb64ef',
                         'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
@@ -70,15 +66,16 @@ class StarCraftImage(torch.utils.data.Dataset):
                     root_dir,
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
                     image_format='dense-hyperspectral',  # other formats are 'sparse-hyperspectral', 'bag-of-units', 'bag-of-units-first'
-                    image_size=64,
+                    image_size=64,  # The desired image size, which must be <= 64
                     label_kind=None,  # other options are '14-class' or '10-class'
                     return_label=False,  # if True, return the label as well as the image
+                    return_dict=False,  # Append a dictionary of metadata to each sample
                     transform=None,  # An optional transform to be applied to the image (note, if bag-of-units, this must take in a tuple of (ids, values))
                     target_transform=None,  # An optional transform to be applied to the label (return_label must be True)
                     dict_transform=None,  # An optional transform to be applied to the dictionary (return_dict must be True)
-                    return_dict=False,  # Append a dictionary of metadata to each sample
                     use_metadata_cache=False,  # Use cached metadata to speed up loading
                     download=False,  # Download the dataset if not found in root_dir
+                    verbose=True # Set to False to suppress non-essential print statements
                     ):
         """
         The main class for the StarCraftImage dataset.
@@ -90,12 +87,12 @@ class StarCraftImage(torch.utils.data.Dataset):
                 returns the test set. If 'all', returns the entire dataset.
             image_format (str): The desired image format. Must be ``"dense-hyperspectral"``, ``"sparse-hyperspectral"``, 
                 ``"bag-of-units"``, or ``"bag-of-units-first"``.  
-                The ``dense-hyperspectral`` format returns a (270,``image_size``,``image_size``) dense tensor.
-                The ``sparse-hyperspectral`` format returns a (270,``image_size``,``image_size``) sparse tensor.
+                The ``dense-hyperspectral`` format returns a (384,``image_size``,``image_size``) dense tensor.
+                The ``sparse-hyperspectral`` format returns a (384,``image_size``,``image_size``) sparse tensor.
                 The ``bag-of-units`` format returns tuple of (unit_ids_bag, unit_values_bag) where both elements are a
-                (3*``C``, ``image_size``,``image_size``) dense tensor where ``C`` is equivalent to the number of 
-                overlapping units at any spatial location and the ordering corresponds to 
-                ``(player_1_channels, player_2_channels, neutral_channels)``.
+                (3, ``C``, ``image_size``,``image_size``) dense tensor where the first axis corresponds to 
+                ``(player_1_channels, player_2_channels, neutral_channels)`` and ``C`` is equivalent to the number of 
+                overlapping units at any spatial location.
                 The ``bag-of-units-first`` format returns tuple of (unit_ids_bag, unit_values_bag) where both elements
                 are a (3, ``image_size``,``image_size```) dense tensor, and is equivalent to always returning the first
                 overlapping dimension of the ``bag-of-units`` representation.
@@ -127,12 +124,13 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             assert label_kind is None, 'label_kind must be None if return_label=False'
 
-        assert image_format in ['dense-hyperspectral', 'bag-of-units', 'bag-of-units-first', 'sparse-hyperspectral'], \
+        assert image_format in ['sparse-hyperspectral', 'dense-hyperspectral', 'bag-of-units', 'bag-of-units-first'], \
                     f'Invalid image_format: {image_format}'
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         if not return_label and target_transform is not None:
             print('\nWarning: target_transform will be ignored since return_label=False\n')
         
+        self.verbose = verbose
         self.data_dir = self._initialize_data_dir(root_dir, download)
         self.image_format = image_format
         self.label_kind = label_kind
@@ -141,7 +139,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         self.data_split = 'train' if train==True else 'test' if train==False else 'all'
         self.return_dict = return_dict
         self.return_label = return_label
-        self.image_size = image_size
+        self.image_size = int(image_size)
 
         # Load and process metadata (e.g., splitting to train or test)
         self.metadata = self._filter_metadata(self._load_metadata(use_metadata_cache))
@@ -153,7 +151,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         if use_metadata_cache:
             md_cache_path = Path(self.data_dir) / 'cached-metadata.pkl'
             if md_cache_path.exists():
-                print('Loading cached metadata found at ', str(md_cache_path))
+                self._verbose_print('Loading cached metadata found at ', str(md_cache_path))
                 md = pd.read_pickle(md_cache_path)
             else:
                 print('No cached metadata found at ', str(md_cache_path))
@@ -161,7 +159,7 @@ class StarCraftImage(torch.utils.data.Dataset):
                 md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
                 md.to_pickle(md_cache_path)
         else:
-            print('Loading metadata from csv. Note: to speed this up in the future, set `use_metadata_cache=True`')
+            self._verbose_print('Loading metadata from csv. Note: to speed this up in the future, set `use_metadata_cache=True`')
             md = pd.read_csv(os.path.join(self.data_dir, 'metadata.csv'), dtype={'target_id': 'Int64'})
         return md
     
@@ -208,7 +206,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         data_dir = root_dir / f'{self.dataset_name}_v{latest_version.replace(".", "_")}'
         # see if the dataset already exists
         if data_dir.exists() and len(os.listdir(data_dir)) > 0:
-            print('Dataset found in ', str(data_dir))
+            self._verbose_print('Dataset found in ', str(data_dir))
         else:
             # the dataset does not exist, download it if download_flag is set to true
             if not download_flag:
@@ -217,19 +215,19 @@ class StarCraftImage(torch.utils.data.Dataset):
                     f'download=True to download the dataset.'
                 )
             
-            print(f'Dataset not found in {data_dir}, downloading...')
+            self._verbose_print(f'Dataset not found in {data_dir}, downloading...')
             data_dir.mkdir(exist_ok=True)
             try:
                 download_and_extract_archive(
                     url=self._versions_dict[latest_version]['download_url'],
                     md5=self._versions_dict[latest_version]['md5'],
-                    download_root=data_dir,
+                    download_root=str(data_dir),
                     filename='starcraftimage.tar.gz',
                     remove_finished=True)
             except Exception as e:
                 print(f'Download failure.\n{os.path.join(data_dir, "starcraftimage.tar.gz")} may be corrupted.',
                        'Please try deleting it and rerunning this command.\n')
-                print(f'Exception: ', e)
+                raise type(e)(str(e))
         return data_dir
 
     def __str__(self):
@@ -242,11 +240,11 @@ class StarCraftImage(torch.utils.data.Dataset):
         out += f'  num_matches = {self.num_matches()}\n'
         out += f'  image_size = ({self.image_size}, {self.image_size})\n'
         if type(item) is tuple:
-            out += f'  getitem = {self[0]}\n'
+            out += f'  getitem = {item}\n'
         elif type(item) is dict:
-            out += f'  getitem_keys = {self[0].keys()}\n'
+            out += f'  getitem_keys = {item.keys()}\n'
         else:
-            out += f'  getitem_type = {type(self[0])}\n'
+            out += f'  getitem_type = {type(item)}\n'
         out += '-----------------'
         return out
         
@@ -257,27 +255,25 @@ class StarCraftImage(torch.utils.data.Dataset):
         return len(self.md['replay_name'].unique())
     
     def __getitem__(self, idx):
+        """ Returns the idx-th window of the dataset with output:
+        (
+            window_image,  (can be a hyperspectral image or a bag-of-units image which is a tuple of (ids, values))
+            label,         (if return_label=True: the label for the idx-th window)
+            window_dictionary, (if return_window_dictionary=True: a dictionary of the window metadata)
+        )
+        Where each sub-output will be transformed if the corresponding transform is specified (e.g., `dict_transform`).
+        """
 
         # Create image for the idx-th window
         window_png_filepath = self._get_window_png_path(idx)
         player_window_dict = self._convert_bag_of_units_png_to_bag_of_units_dict(window_png_filepath)
+
         if self.image_format in ['sparse-hyperspectral', 'dense-hyperspectral']:
-            # convert from the dense bag of units representation to a hyperspectral image representation
-            player_window_dict = self._convert_bag_of_units_dict_to_sparse_window_dict(player_window_dict)
-            window_image = torch.cat([player_window_dict[f'{player}_hyperspectral'] 
-                                        for player in ['player_1', 'player_2', 'neutral']], dim=0).coalesce()
-            if self.image_format == 'dense-hyperspectral':
-                window_image = window_image.to_dense()
+            window_image = self._get_hyperspectral_image(player_window_dict=player_window_dict)
+        elif self.image_format in ['bag-of-units', 'bag-of-units-first']:
+            window_image = self._get_bag_of_units_image(player_window_dict=player_window_dict)
         else:
-            if self.image_size != EXTRACTED_IMAGE_SIZE:
-                # resize the images in the player_window_dict
-                player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
-            # convert from the dense bag of units representation to a dense bag of units image representation
-            window_image = self._convert_bag_of_units_dict_to_bag_of_unit_image(player_window_dict)
-            # Note: window image is a tuple of (unit_ids, unit_values)
-            if self.image_format == 'bag-of-units-first':
-                # Only keep the first channel for each players bag of units
-                window_image = (window_image[0][:, 0, ...], window_image[1][:, 0, ...],)
+            raise ValueError(f'Unrecognized image_format: {self.image_format}')
              
         # Begin constructing the return tuple, applying transforms if necessary
         return_tuple = (window_image, ) if self.transform is None else (self.transform(window_image), )
@@ -286,8 +282,8 @@ class StarCraftImage(torch.utils.data.Dataset):
             return_tuple += (label,) if self.target_transform is None else (self.target_transform(label), )            
         if self.return_dict:
             data_dict = dict(
-                player_1_map_state=player_window_dict['player_1_map_state'],
-                player_2_map_state=player_window_dict['player_2_map_state'],
+                **self._build_map_state_dict(player_window_dict['player_1_map_state'], player_idx=1),
+                **self._build_map_state_dict(player_window_dict['player_2_map_state'], player_idx=2),
                 # Extract terrain information   ('pathing_grid', 'placement_grid', 'terrain_height')
                 **self._extract_terrain_info(idx, return_dict=True),
                 # Extract unit tabular vector ('player_1_tabular', 'player_2_tabular')
@@ -298,7 +294,42 @@ class StarCraftImage(torch.utils.data.Dataset):
 
         return self._unpack_tuple(return_tuple)
     
+    def _get_hyperspectral_image(self, png_filepath=None, player_window_dict=None):
+        """ Returns the sparse or dense hyperspectral image from the png_filepath or player_window_dict. """
+        assert png_filepath is not None or player_window_dict is not None,  \
+            'Must provide either png_filepath or player_window_dict'
+        if player_window_dict is None:
+            player_window_dict = self._convert_bag_of_units_png_to_bag_of_units_dict(png_filepath)
+        # convert from the dense bag of units representation to a hyperspectral image representation
+        player_window_dict = self._convert_bag_of_units_dict_to_sparse_window_dict(player_window_dict)
+        window_image = torch.cat([player_window_dict[f'{player}_hyperspectral'] 
+                                    for player in ['player_1', 'player_2', 'neutral']], dim=0).coalesce()
+        if self.image_format == 'dense-hyperspectral':
+            window_image = window_image.to_dense()
+        return window_image
+    
+    def _get_bag_of_units_image(self, png_filepath=None, player_window_dict=None):
+        """ Returns the bag-of-units tuple from the png_filepath or player_window_dict. 
+        If self.image_format == 'bag-of-units-first', then the bag-of-units image only contains the first channel for
+        each player bag (i.e. the return shape is fixed to (3, image_size, image_size) )."""
+        assert png_filepath is not None or player_window_dict is not None,  \
+            'Must provide either png_filepath or player_window_dict'
+        if player_window_dict is None:
+            player_window_dict = self._convert_bag_of_units_png_to_bag_of_units_dict(png_filepath)
+        """ Returns the bag of units image from the png_filepath. """
+        if self.image_size != EXTRACTED_IMAGE_SIZE:
+            # resize the images in the player_window_dict
+            player_window_dict = self._resize_dense_player_window_dict(player_window_dict)
+        # convert from the dense bag of units representation to a dense bag of units image representation
+        window_image = self._convert_bag_of_units_dict_to_bag_of_unit_image(player_window_dict)
+        # Note: window image is a tuple of (unit_ids, unit_values)
+        if self.image_format == 'bag-of-units-first':
+            # Only keep the first channel for each players bag of units
+            window_image = (window_image[0][:, 0, ...], window_image[1][:, 0, ...],)
+        return window_image
+    
     def _get_unit_tabular(self, idx):
+        """ Returns a dictionary of the tabular unit information for player 1 and player 2."""
         def _get_player_tabular(md_row, player_id):
             return [md_row[f'player_{player_id}_{key}'] for key in TABULAR_KEYS]
         
@@ -306,6 +337,16 @@ class StarCraftImage(torch.utils.data.Dataset):
             player_1_tabular = torch.tensor(_get_player_tabular(self.metadata.iloc[idx], 1)),
             player_2_tabular = torch.tensor(_get_player_tabular(self.metadata.iloc[idx], 2))
         )
+    
+    def _build_map_state_dict(self, player_map_state, player_idx=1):
+        if self.image_size != player_map_state.shape[1]:
+            player_map_state = torchvision.transforms.functional.resize(player_map_state,
+                                                                [self.image_size, self.image_size]).type(torch.uint8)
+        return {
+            f'player_{player_idx}_is_visible': player_map_state[0] != 0,
+            f'player_{player_idx}_is_seen': player_map_state[1] != 0,
+            f'player_{player_idx}_creep': player_map_state[2]
+        }
 
     def _get_window_png_path(self, idx):
         md_row = self.metadata.iloc[idx]
@@ -318,6 +359,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         return torch.tensor(item['winning_player_id'] == 1)
     
     def _convert_bag_of_units_png_to_bag_of_units_dict(self, png_file_path):
+        """ Converts a png file of a bag of units into a dictionary bag of units."""
         KEYS_OF_INTEREST = ['unit_values', 'unit_ids', 'map_state']
         player_prefix_to_channel_idx = {
             'player_2': 0,
@@ -342,6 +384,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         return window_dict
     
     def _convert_bag_of_units_dict_to_bag_of_unit_image(self, player_window_dict):
+        """ Converts a dictionary bag of units into a bag of units image."""
         image_unit_values = []
         image_unit_ids = []
         max_bag_size = -1
@@ -353,7 +396,7 @@ class StarCraftImage(torch.utils.data.Dataset):
         for i in range(len(image_unit_values)):
             image_unit_values[i] = self._zero_pad_channel(image_unit_values[i], max_bag_size)
             image_unit_ids[i] = self._zero_pad_channel(image_unit_ids[i], max_bag_size)
-        return torch.stack(image_unit_ids, dim=0).long(), torch.stack(image_unit_values, dim=0)
+        return torch.stack(image_unit_ids, dim=0).byte(), torch.stack(image_unit_values, dim=0).byte()
 
     def _convert_dense_player_bag_to_resized_player_hyperspectral(self, bag_window_dict, player_prefix,
                                                                   return_sparse_tensor=True):
@@ -476,7 +519,7 @@ class StarCraftImage(torch.utils.data.Dataset):
 
         if self.image_size != terrain_images.shape[1]:
             terrain_images = torchvision.transforms.functional.resize(terrain_images,
-                                                                (self.image_size, self.image_size)).type(torch.uint8)
+                                                                [self.image_size, self.image_size]).type(torch.uint8)
         terrain_images = dict(
             pathing_grid=terrain_images[0] != 0,  # pathing_grid is binary, so convert
             placement_grid=terrain_images[1] != 0,  # placement_grid is binary, so convert
@@ -492,6 +535,10 @@ class StarCraftImage(torch.utils.data.Dataset):
             return tup[0]
         else:
             return tup
+        
+    def _verbose_print(self, *msg):
+        if self.verbose:
+            print(*msg)
 
     def _zero_pad_channel(self, image, desired_channel_size):
         """
