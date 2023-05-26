@@ -13,8 +13,10 @@ Each dataset includes images summarize a 10 second window (255 frames) of a Star
 1. `StarCraftImage`: This is the main 3.6 million sample dataset which includes multiple image formats:`'sparse-hyperspectral'`, `'dense-hyperspectral'`, `'bag-of-units'`, `'bag-of-units-first'`, and contains all unit positioning information throughout the window.
 This dataset can be used via the following:
 
-        from sc2image.dataset import StarCraftImage
-        scimage = StarCraftImage(root_dir=<your_download_path>, download=True)
+    ```py
+    from sc2image.dataset import StarCraftImage
+    scimage = StarCraftImage(root_dir=<your_download_path>, download=True)
+    ```
 
     This will download the StarCraftImage dataset to the `<your_download_path>` directory (if it does not already exist there).
 As this dataset has over 3.6 million samples, this might take a while to download. However, you can use the standalone StarCraftCIFAR10 and StarCraftMNIST versions below.
@@ -25,16 +27,20 @@ All images have been condensed into a three channel (RGB) image where the Red ch
 The 10 classes equate to: `(map_name, did_window_happen_in_first_half_of_replay)`.
 The dataset can be loaded via:
         
-        from sc2image.dataset import StarCraftCIFAR10
-        scimage_cifar10 = StarCraftCIFAR10(root_dir=<your_download_path>, download=True)
- 
+    ```py    
+    from sc2image.dataset import StarCraftCIFAR10
+    scimage_cifar10 = StarCraftCIFAR10(root_dir=<your_download_path>, download=True)
+    ```
+
  3. `StarCraftMNIST`: This is a further simplified version of the `StarCraftImage` dataset which exactly matches the setup of the MNIST dataset. 
  The grayscale images show to the seen last seen timestamps for units each pixel location, and the 10 classes match that of `StarCraftCIFAR10`.
  The dataset can be loaded via:
 
-        from sc2image.dataset import StarCraftMNIST
-        scimage_mnist = StarCraftMNIST(root_dir=<your_download_path>, download=True)
-
+    ```py
+    from sc2image.dataset import StarCraftMNIST
+    scimage_mnist = StarCraftMNIST(root_dir=<your_download_path>, download=True)
+    ```
+    
 ## Example uses
 Please see the `starcraftimage-quickstart` jupyter notebook in the `dataset-demos` folder to see details on using this dataset!
 
