@@ -58,7 +58,7 @@ class StarCraftImage(torch.utils.data.Dataset):
     """The StarCraftImage dataset."""
     _versions_dict = {  # Note, this only includes major and minor versions
                 '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405',
-                        'md5': 'b0ebec4a7c61684dc24374d14268cbf7'}
+                        'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
             }
     dataset_name = 'starcraft-image-dataset'
     
