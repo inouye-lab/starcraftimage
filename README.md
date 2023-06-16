@@ -1,6 +1,6 @@
 # StarCraftImage Dataset
 <p align='center'>
-  <img width='40%' src='https://github.com/inouye-lab/starcraftimage/blob/main/figures/dataset-overview-figure.png' />
+  <img width='max%' src='https://github.com/inouye-lab/starcraftimage/blob/main/figures/dataset-overview-figure.png' />
 </p>
 
 --------------------------------------------------------------------------------
