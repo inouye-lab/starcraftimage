@@ -21,9 +21,9 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     install_requires = [
-        'torch>=1.11',
-        'numpy>=1.19.2',
-        'tqdm>=4.6.0',
+        'torch>=1.7.0',
+        'numpy>=1.19.1',
+        'tqdm>=4.53.0',
         'torchvision>=0.8.2',
         'outdated>=0.2.0',
         'pandas>=1.1.0',
