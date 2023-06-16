@@ -30,6 +30,8 @@ pip install -e .
 
 ## Quickstart
 
+**For more detailed documentation and example uses, visit the [dataset docs](https://starcraftdata.davidinouye.com/docs) for using `sc2image`.**
+
 There are three main StarCraftII datasets. 
 Each dataset includes images summarize a 10 second window (255 frames) of a StarCraftII replay.
 
