@@ -12,6 +12,7 @@ from torchvision.datasets.utils import download_and_extract_archive
 from torchvision.datasets import MNIST, CIFAR10
 
 from .utils.unit_type_data import NEUTRAL_IDS as neutral_ids, NONNEUTRAL_IDS as nonneutral_ids, NO_UNIT_CHANNEL
+from .utils.unit_type_data import NONNEUTRAL_CHANNEL_TO_NAME, NEUTRAL_CHANNEL_TO_NAME
 
 # Global Constants
 EXTRACTED_IMAGE_SIZE = 64
@@ -54,10 +55,23 @@ _DEFAULT_14_LABELS_DICT = {
     13: ('Catallena LE (Void)', 'End')
 }
 
+HYPERSPECTRAL_CHANNEL_TO_NAME = dict()  # Mapping the channels of the hyperspectral image to player + unit names
+channel_idx = 0
+for player_prefix in ['P1', 'P2', 'NEUTRAL']:
+    if player_prefix != 'NEUTRAL':
+        unit_channel_to_name = NONNEUTRAL_CHANNEL_TO_NAME
+        player_prefix = player_prefix + '_'
+    else:
+        unit_channel_to_name = NEUTRAL_CHANNEL_TO_NAME
+        player_prefix = ''
+    for unit_channel, unit_name in unit_channel_to_name.items():
+        HYPERSPECTRAL_CHANNEL_TO_NAME[channel_idx] = f'{player_prefix}{unit_name}'
+        channel_idx += 1
+
 class StarCraftImage(torch.utils.data.Dataset):
     """The StarCraftImage dataset."""
     _versions_dict = {  # Note, this only includes major and minor versions
-                '1.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405',
+                '1.0.0': {'download_url': 'https://figshare.com/ndownloader/files/40718405',
                         'md5': '23b691e7f520c3a7df7bfe0204a8fb90'}
             }
     dataset_name = 'starcraft-image-dataset'
