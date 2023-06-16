@@ -21,7 +21,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     install_requires = [
-        'pytorch>=1.11',
+        'torch>=1.11',
         'numpy>=1.19.2',
         'tqdm>=4.6.0',
         'torchvision>=0.8.2',
