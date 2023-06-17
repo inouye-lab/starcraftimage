@@ -9,7 +9,8 @@
 [![License](https://img.shields.io/github/license/inouye-lab/starcraftimage)](https://github.com/inouye-lab/starcraftimage/blob/main/LICENSE)
 
 
-Welcome! This is the repository for the StarCraftImage dataset from the paper: [StarCraftImage: A Dataset For Prototyping Spatial Reasoning Methods For Multi-Agent Environments](https://openaccess.thecvf.com/content/CVPR2023/html/Kulinski_StarCraftImage_A_Dataset_for_Prototyping_Spatial_Reasoning_Methods_for_Multi-Agent_CVPR_2023_paper.html)
+Welcome! This is the repository for the StarCraftImage dataset from the paper: [StarCraftImage: A Dataset For Prototyping Spatial Reasoning Methods For Multi-Agent Environments](https://openaccess.thecvf.com/content/CVPR2023/html/Kulinski_StarCraftImage_A_Dataset_for_Prototyping_Spatial_Reasoning_Methods_for_Multi-Agent_CVPR_2023_paper.html).
+This README has basic installation and quickstart usage but our project webpage has more documentation: [StarCraftImage project webpage](https://starcraftdata.davidinouye.com/). 
 
 ## Installation
 
@@ -40,10 +41,10 @@ This dataset can be used via the following:
 
     ```py
     from sc2image.dataset import StarCraftImage
-    sc2image = StarCraftImage(root_dir=<your_download_path>, download=True)
+    sc2image = StarCraftImage(root_dir="data", download=True)
     ```
 
-    This will download the StarCraftImage dataset to the `<your_download_path>` directory (if it does not already exist there).
+    This will download the StarCraftImage dataset to the `data` directory (if it does not already exist there).
 As this dataset has over 3.6 million samples, this might take a while to download. However, you can use the standalone StarCraftCIFAR10 and StarCraftMNIST versions below.
 
 
@@ -54,7 +55,7 @@ The dataset can be loaded via:
         
     ```py    
     from sc2image.dataset import StarCraftCIFAR10
-    sc2image_cifar10 = StarCraftCIFAR10(root_dir=<your_download_path>, download=True)
+    sc2image_cifar10 = StarCraftCIFAR10(root="data", download=True)
     ```
 
  3. `StarCraftMNIST`: This is a further simplified version of the `StarCraftImage` dataset which exactly matches the setup of the MNIST dataset. 
@@ -63,7 +64,7 @@ The dataset can be loaded via:
 
     ```py
     from sc2image.dataset import StarCraftMNIST
-    sc2image_mnist = StarCraftMNIST(root_dir=<your_download_path>, download=True)
+    sc2image_mnist = StarCraftMNIST(root="data", download=True)
     ```
     
 ## Example uses
