@@ -12,6 +12,17 @@
 Welcome! This is the repository for the StarCraftImage dataset from the paper: [StarCraftImage: A Dataset For Prototyping Spatial Reasoning Methods For Multi-Agent Environments](https://openaccess.thecvf.com/content/CVPR2023/html/Kulinski_StarCraftImage_A_Dataset_for_Prototyping_Spatial_Reasoning_Methods_for_Multi-Agent_CVPR_2023_paper.html).
 This README has basic installation and quickstart usage but our project webpage has more documentation: [StarCraftImage project webpage](https://starcraftdata.davidinouye.com/). 
 
+If you use this dataset, please cite the following paper:
+```
+@inproceedings{kulinski2023starcraftimage,
+  title={StarCraftImage: A Dataset for Prototyping Spatial Reasoning Methods for Multi-Agent Environments},
+  author={Kulinski, Sean and Waytowich, Nicholas R and Hare, James Z and Inouye, David I},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={22004--22013},
+  year={2023}
+}
+```
+
 ## Installation
 
 We recommend using the `pip` package manager to install `sc2image`.
@@ -70,17 +81,7 @@ The dataset can be loaded via:
 ## Example uses
 Please see the `starcraftimage-quickstart` jupyter notebook in the `dataset-demos` folder to see details on using this dataset!
 
-## Citation
-If you use this dataset, please cite the following paper:
-```
-@inproceedings{kulinski2023starcraftimage,
-  title={StarCraftImage: A Dataset for Prototyping Spatial Reasoning Methods for Multi-Agent Environments},
-  author={Kulinski, Sean and Waytowich, Nicholas R and Hare, James Z and Inouye, David I},
-  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
-  pages={22004--22013},
-  year={2023}
-}
-```
+## Bug reports
 
 If you run into any issues, please feel free to open an issue in this repository or email us via the corresponding author email in the [main paper](https://openaccess.thecvf.com/content/CVPR2023/html/Kulinski_StarCraftImage_A_Dataset_for_Prototyping_Spatial_Reasoning_Methods_for_Multi-Agent_CVPR_2023_paper.html).
 
