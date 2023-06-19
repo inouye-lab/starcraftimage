@@ -368,11 +368,20 @@ class StarCraftImage(torch.utils.data.Dataset):
         if self.image_size != player_map_state.shape[1]:
             player_map_state = torchvision.transforms.functional.resize(player_map_state,
                                                                 [self.image_size, self.image_size]).type(torch.uint8)
-        return {
-            f'player_{player_idx}_is_visible': player_map_state[0] != 0,
-            f'player_{player_idx}_is_seen': player_map_state[1] != 0,
-            f'player_{player_idx}_creep': player_map_state[2]
-        }
+            
+        # on about 40% of game plays, player_map_state seems to only have length 2 for first index 
+        try:
+            return {
+                f'player_{player_idx}_is_visible': player_map_state[0] != 0,
+                f'player_{player_idx}_is_seen': player_map_state[1] != 0,
+                f'player_{player_idx}_creep': player_map_state[2]
+            }
+        except IndexError:
+            return {
+                f'player_{player_idx}_is_visible': player_map_state[0] != 0,
+                f'player_{player_idx}_is_seen': player_map_state[1] != 0,
+                f'player_{player_idx}_creep': None
+            }
 
     def _get_window_png_path(self, idx):
         md_row = self.metadata.iloc[idx]
