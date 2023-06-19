@@ -1,6 +1,7 @@
 import os
 import collections
 from pathlib import Path
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -77,7 +78,7 @@ class StarCraftImage(torch.utils.data.Dataset):
     dataset_name = 'starcraft-image-dataset'
     
     def __init__(self,
-                    root='data',  # Path to the root directory of the ``starcraft-image-dataset``  
+                    root=None,  # Path to the root directory of the ``starcraft-image-dataset``  
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
                     image_format='dense-hyperspectral',  # other formats are 'sparse-hyperspectral', 'bag-of-units', 'bag-of-units-first'
                     image_size=64,  # The desired image size, which must be <= 64
@@ -145,9 +146,14 @@ class StarCraftImage(torch.utils.data.Dataset):
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         if not return_label and target_transform is not None:
             print('\nWarning: target_transform will be ignored since return_label=False\n')
-        if root_dir is not None:
-            print('Use of `root_dir` has been deprecated and will raise an error in later versions.',
-                  'Please use `root` instead')
+
+        if root is None and root_dir is None:
+            raise ValueError('The `root` parameter must be specified. (`root_dir` may also be used, but is deprecated.)')
+        if root is not None and root_dir is not None:
+            raise ValueError('`root` and `root_dir` were both specified. Please only use `root`.')
+        if root is None and root_dir is not None:
+            warnings.warn('Use of `root_dir` has been deprecated and will raise an error in later versions. ' + \
+                     'Please use the `root` parameter instead.', DeprecationWarning, stacklevel=2)
             root = root_dir
         
         self.verbose = verbose
