@@ -77,7 +77,7 @@ class StarCraftImage(torch.utils.data.Dataset):
     dataset_name = 'starcraft-image-dataset'
     
     def __init__(self,
-                    root_dir,
+                    root='data',  # Path to the root directory of the ``starcraft-image-dataset``  
                     train=True,  # can be True, False, or 'all', where 'all' yields both train and test
                     image_format='dense-hyperspectral',  # other formats are 'sparse-hyperspectral', 'bag-of-units', 'bag-of-units-first'
                     image_size=64,  # The desired image size, which must be <= 64
@@ -88,14 +88,15 @@ class StarCraftImage(torch.utils.data.Dataset):
                     target_transform=None,  # An optional transform to be applied to the label (return_label must be True)
                     dict_transform=None,  # An optional transform to be applied to the dictionary (return_dict must be True)
                     use_metadata_cache=False,  # Use cached metadata to speed up loading
-                    download=False,  # Download the dataset if not found in root_dir
-                    verbose=True # Set to False to suppress non-essential print statements
+                    download=False,  # Download the dataset if not found in root
+                    verbose=True,  # Set to False to suppress non-essential print statements
+                    root_dir=None,  # Alias for ``root``. This is deprecated and `root` should be used.
                     ):
         """
         The main class for the StarCraftImage dataset.
 
         Args:
-            root_dir (str): Path to the root directory where the ``starcraft-image-dataset`` directory exists or will be
+            root (str): Path to the root directory where the ``starcraft-image-dataset`` directory exists or will be
                 saved to if download is set to True.
             train (bool): Whether to return the training or test set. If True, returns the training set. If False, 
                 returns the test set. If 'all', returns the entire dataset.
@@ -125,7 +126,8 @@ class StarCraftImage(torch.utils.data.Dataset):
                 loaded using the metadata.csv file (which is slower)
             download (bool, optional): If true, downloads the dataset from the internet and
                 puts it in root directory. If dataset is already downloaded, it is not
-                downloaded again."""
+                downloaded again.
+            root_dir (str): Alias for ``root``. This is deprecated and `root` should be used."""
         # Validate input parameters
         if return_label:
             assert label_kind in ['10-class', '14-class'], """
@@ -143,9 +145,13 @@ class StarCraftImage(torch.utils.data.Dataset):
         assert train in [True, False, 'all'], f'train must be True, False, or "all" but got {train}'
         if not return_label and target_transform is not None:
             print('\nWarning: target_transform will be ignored since return_label=False\n')
+        if root_dir is not None:
+            print('Use of `root_dir` has been deprecated and will raise an error in later versions.',
+                  'Please use `root` instead')
+            root = root_dir
         
         self.verbose = verbose
-        self.data_dir = self._initialize_data_dir(root_dir, download)
+        self.data_dir = self._initialize_data_dir(root, download)
         self.image_format = image_format
         self.label_kind = label_kind
         self.transform, self.target_transform, self.dict_transform = transform, target_transform, dict_transform
@@ -209,15 +215,15 @@ class StarCraftImage(torch.utils.data.Dataset):
         else:
             print('No cached metadata found at ', str(md_cache_path))
 
-    def _initialize_data_dir(self, root_dir, download_flag):
+    def _initialize_data_dir(self, root, download_flag):
         """
         Initialize the data directory, downloading the dataset if necessary
         """
         latest_version = sorted(list(self._versions_dict.keys()))[-1]  # getting the latest version
 
-        root_dir = Path(root_dir)
-        root_dir.mkdir(exist_ok=True)
-        data_dir = root_dir / f'{self.dataset_name}_v{latest_version.replace(".", "_")}'
+        root = Path(root)
+        root.mkdir(exist_ok=True)
+        data_dir = root / f'{self.dataset_name}_v{latest_version.replace(".", "_")}'
         # see if the dataset already exists
         if data_dir.exists() and len(os.listdir(data_dir)) > 0:
             self._verbose_print('Dataset found in ', str(data_dir))
@@ -665,7 +671,7 @@ def starcraft_dense_ragged_collate(batch):
     `sc_collate` is an alias for this function as well.
 
     Example:
-    >>> scdata = StarCraftImage(root_dir, use_sparse=False)
+    >>> scdata = StarCraftImage(root, use_sparse=False)
     >>> torch.utils.data.DataLoader(scdata, collate_fn=sc_collate, batch_size=32, shuffle=True)
     '''
     elem = batch[0]

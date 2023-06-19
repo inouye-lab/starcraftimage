@@ -9,7 +9,7 @@ from sc2image.dataset_extensions.modules import StarCraftToImageReducer
 
 class StarCraftSimple(StarCraftImage):
     def __init__(self, 
-                    root_dir, 
+                    root, 
                     train=True,
                     image_format=None,  # Must be 'mnist' or 'cifar10'
                     transform=None,  # Transform applied to image
@@ -23,7 +23,7 @@ class StarCraftSimple(StarCraftImage):
         Note: this is much slower than using the StarCraftMNIST and StarCraftCIFAR10 datasets directly as this 
         transforms each sample the its hyperspectral format to the desired format on the fly.
         Args:
-            root_dir (str): Path to the root directory where the `starcraft-image-dataset` directory exists or will be
+            root (str): Path to the root directory where the `starcraft-image-dataset` directory exists or will be
                 saved to if download is set to True.
             train (bool): Whether to return the training or test set. If True, returns the training set. If False, 
                 returns the test set. If 'all', returns the entire dataset.
@@ -51,7 +51,7 @@ class StarCraftSimple(StarCraftImage):
         self._reduce_to_image = StarCraftToImageReducer()
         self.transform = transform
         self.target_transform = target_transform
-        super().__init__(root_dir, train=train, image_size=image_size, image_format='bag-of-units',
+        super().__init__(root, train=train, image_size=image_size, image_format='bag-of-units',
                          use_metadata_cache=use_metadata_cache, return_label=True, label_kind='10-class',
                          return_dict=False, download=download)
         

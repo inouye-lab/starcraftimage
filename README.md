@@ -52,7 +52,7 @@ This dataset can be used via the following:
 
     ```py
     from sc2image.dataset import StarCraftImage
-    sc2image = StarCraftImage(root_dir="data", download=True)
+    sc2image = StarCraftImage(root="data", download=True)
     ```
 
     This will download the StarCraftImage dataset to the `data` directory (if it does not already exist there).
