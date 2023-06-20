@@ -371,7 +371,9 @@ class StarCraftImage(torch.utils.data.Dataset):
         return {
             f'player_{player_idx}_is_visible': player_map_state[0] != 0,
             f'player_{player_idx}_is_seen': player_map_state[1] != 0,
-            f'player_{player_idx}_creep': player_map_state[2]
+            # check if there is a creep channel (i.e. if one of the players is a Zerg player)
+            f'player_{player_idx}_creep': player_map_state[2] if len(player_map_state) > 2 
+                        else torch.zeros(size=(self.image_size, self.image_size), dtype=torch.uint8),
         }
 
     def _get_window_png_path(self, idx):
